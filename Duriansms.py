@@ -1,4 +1,4 @@
-# Duriansms.py - Complete Bot with Auto Restore from Telegram Backup (Fixed)
+# Duriansms.py - Complete Bot with Admin Panel & User Access Management & Points System
 
 import requests
 import time
@@ -11,7 +11,7 @@ BOT_TOKEN = "8666173297:AAEBcbVPdUdXmLt8ZvCyIWzmhfg-OU8eM0c"
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # ============= টেলিগ্রাম ব্যাকআপ গ্রুপ কনফিগারেশন =============
-BACKUP_GROUP_ID = -1003713267585  # ব্যাকআপ গ্রুপ আইডি
+BACKUP_GROUP_ID = -1003713267585
 BACKUP_MESSAGE_IDS = {}
 
 # ============= অ্যাডমিন কনফিগারেশন =============
@@ -36,13 +36,11 @@ DEFAULT_CONFIG = {
 DEFAULT_POINTS = 0
 OTP_COST = 100
 
-# ============= টেলিগ্রাম গ্রুপ থেকে ব্যাকআপ রিস্টোর ফাংশন (আপডেটেড) =============
+# ============= টেলিগ্রাম গ্রুপ থেকে ব্যাকআপ রিস্টোর ফাংশন =============
 
 def get_all_group_messages():
-    """গ্রুপের সব মেসেজ সংগ্রহ করা"""
     messages = []
     offset = 0
-    
     try:
         while True:
             r = requests.get(TG_API + "getUpdates", params={
@@ -50,12 +48,10 @@ def get_all_group_messages():
                 "offset": offset,
                 "limit": 100
             }, timeout=10)
-            
             if r.status_code == 200:
                 data = r.json()
                 if not data.get("ok") or not data.get("result"):
                     break
-                
                 for update in data["result"]:
                     if "message" in update:
                         messages.append(update["message"])
@@ -66,29 +62,20 @@ def get_all_group_messages():
                 break
     except Exception as e:
         print(f"Get messages error: {e}")
-    
     return messages
 
 def restore_from_telegram_backup():
-    """টেলিগ্রাম গ্রুপ থেকে ব্যাকআপ রিস্টোর করা"""
     print("🔄 Checking for backups in Telegram group...")
-    
     messages = get_all_group_messages()
-    
     if not messages:
         print("⚠️ No messages found in backup group")
         return False
-    
     restored = False
-    
     for msg in messages:
         text = msg.get("text", "")
-        
-        # user_access.json রিস্টোর
         if text.startswith("📁 user_access.json"):
             try:
                 json_part = text.replace("📁 user_access.json", "").strip()
-                # JSON পার্স করার আগে ক্লিনআপ
                 json_part = json_part.replace("```json", "").replace("```", "").strip()
                 data = json.loads(json_part)
                 with open(ACCESS_FILE, 'w') as f:
@@ -98,8 +85,6 @@ def restore_from_telegram_backup():
                 restored = True
             except Exception as e:
                 print(f"❌ Failed to restore {ACCESS_FILE}: {e}")
-        
-        # user_points.json রিস্টোর
         elif text.startswith("📁 user_points.json"):
             try:
                 json_part = text.replace("📁 user_points.json", "").strip()
@@ -111,8 +96,6 @@ def restore_from_telegram_backup():
                 restored = True
             except Exception as e:
                 print(f"❌ Failed to restore {POINTS_FILE}: {e}")
-        
-        # users_data.json রিস্টোর
         elif text.startswith("📁 users_data.json"):
             try:
                 json_part = text.replace("📁 users_data.json", "").strip()
@@ -124,10 +107,8 @@ def restore_from_telegram_backup():
                 restored = True
             except Exception as e:
                 print(f"❌ Failed to restore {CONFIG_FILE}: {e}")
-    
     if not restored:
         print("⚠️ No backup files found in group, creating fresh files")
-        # নতুন ফাইল তৈরি করুন
         if not os.path.exists(ACCESS_FILE):
             with open(ACCESS_FILE, 'w') as f:
                 json.dump({"authorized_users": []}, f, indent=2)
@@ -139,22 +120,17 @@ def restore_from_telegram_backup():
                 json.dump({}, f, indent=2)
     else:
         print("✅ Backup restore completed!")
-    
     return restored
 
 def save_backup_to_group(filename, data):
-    """ডাটা টেলিগ্রাম গ্রুপে ব্যাকআপ করা"""
     try:
         text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)}"
-        
         if len(text) > 4096:
             text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)[:3500]}\n... (truncated)"
-        
         r = requests.post(TG_API + "sendMessage", json={
             "chat_id": BACKUP_GROUP_ID,
             "text": text
         }, timeout=10)
-        
         if r.status_code == 200:
             print(f"✅ Backup sent to group: {filename}")
             return True
@@ -166,15 +142,12 @@ def save_backup_to_group(filename, data):
         return False
 
 def backup_all_data():
-    """সব ডাটা ব্যাকআপ করা"""
     if os.path.exists(ACCESS_FILE):
         with open(ACCESS_FILE, 'r') as f:
             save_backup_to_group(ACCESS_FILE, json.load(f))
-    
     if os.path.exists(POINTS_FILE):
         with open(POINTS_FILE, 'r') as f:
             save_backup_to_group(POINTS_FILE, json.load(f))
-    
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as f:
             save_backup_to_group(CONFIG_FILE, json.load(f))
@@ -186,7 +159,6 @@ def load_access():
         try:
             with open(ACCESS_FILE, 'r') as f:
                 data = json.load(f)
-                # নিশ্চিত করুন authorized_users লিস্ট আছে
                 if "authorized_users" not in data:
                     data = {"authorized_users": []}
                 return data
@@ -203,25 +175,16 @@ def save_access(access_data):
         pass
 
 def is_authorized(user_id):
-    # অ্যাডমিন সবসময় অথরাইজড
     if user_id in ADMIN_IDS:
         return True
-    
-    # ফাইল থেকে অথরাইজড ইউজার লিস্ট লোড করুন
     access_data = load_access()
     authorized = access_data.get("authorized_users", [])
-    
-    # ডিবাগ প্রিন্ট (প্রথমবারের জন্য)
-    print(f"🔍 Checking authorization for {user_id}")
-    print(f"   Authorized list: {authorized}")
-    
     return user_id in authorized
 
 def add_user_access(user_id):
     access_data = load_access()
     if "authorized_users" not in access_data:
         access_data["authorized_users"] = []
-    
     if user_id not in access_data["authorized_users"]:
         access_data["authorized_users"].append(user_id)
         save_access(access_data)
@@ -233,7 +196,6 @@ def remove_user_access(user_id):
     access_data = load_access()
     if "authorized_users" not in access_data:
         access_data["authorized_users"] = []
-    
     if user_id in access_data["authorized_users"]:
         access_data["authorized_users"].remove(user_id)
         save_access(access_data)
@@ -459,9 +421,10 @@ def get_inline_buttons(phone, country_name, flag):
         ]]
     }
 
-# ============= API ফাংশন =============
+# ============= সেন্ড মেসেজ ফাংশন (অ্যাডমিনের জন্য পয়েন্ট চেক বাইপাস) =============
 
 def send_msg(chat_id, text, kb=None, reply_markup=None):
+    # ব্যাকআপ গ্রুপের জন্য
     if chat_id == BACKUP_GROUP_ID:
         data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
         if kb:
@@ -473,6 +436,19 @@ def send_msg(chat_id, text, kb=None, reply_markup=None):
         except:
             return None
     
+    # ওয়েলকাম মেসেজের জন্য (অননুমোদিত ইউজার)
+    if "Welcome to Durian World Bot" in text or "Join Now My Channel" in text:
+        data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+        if kb:
+            data["reply_markup"] = json.dumps(kb)
+        if reply_markup:
+            data["reply_markup"] = json.dumps(reply_markup)
+        try:
+            return requests.post(TG_API + "sendMessage", json=data, timeout=10).json()
+        except:
+            return None
+    
+    # অ্যাডমিন সবসময় মেসেজ পাবেন
     if not is_authorized(chat_id) and chat_id not in ADMIN_IDS:
         return None
     
@@ -664,10 +640,12 @@ def start_auto_watch(chat_id):
     if running_watches.get(chat_id, {}).get("active"):
         return False
     
-    if not has_user_config(chat_id):
-        if not has_sufficient_points(chat_id):
-            send_msg(chat_id, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(chat_id)} points\nNeed: {OTP_COST} points per OTP\n\nContact admin to add points.", MAIN_KEYBOARD)
-            return False
+    # অ্যাডমিনের জন্য পয়েন্ট চেক করবে না
+    if not is_admin(chat_id):
+        if not has_user_config(chat_id):
+            if not has_sufficient_points(chat_id):
+                send_msg(chat_id, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(chat_id)} points\nNeed: {OTP_COST} points per OTP\n\nContact admin to add points.", MAIN_KEYBOARD)
+                return False
     
     countries = user_data.get(chat_id, {}).get("countries", [])
     if not countries:
@@ -701,9 +679,8 @@ def is_admin(chat_id):
 # ============= ব্যাকআপ থ্রেড (প্রতি ৫ মিনিটে) =============
 
 def auto_backup_worker():
-    """প্রতি ৫ মিনিটে自動ব্যাকআপ"""
     while True:
-        time.sleep(300)  # 5 মিনিট
+        time.sleep(300)
         try:
             backup_all_data()
             print("✅ Auto backup completed")
@@ -717,7 +694,7 @@ def start_auto_backup():
 # ============= মেইন লুপ =============
 
 print("=" * 60)
-print("🤖 Durian SMS Bot - Auto Restore from Telegram Backup")
+print("🤖 Durian SMS Bot - Complete Edition")
 print("=" * 60)
 print(f"👤 Admin ID: {ADMIN_IDS}")
 print(f"🔑 Admin Password: {ADMIN_PASSWORD}")
@@ -726,19 +703,13 @@ print(f"🌍 Total Countries: {len(COUNTRIES)}")
 print(f"💰 OTP Cost: {OTP_COST} points")
 print("=" * 60)
 
-# 🔄 বট স্টার্ট আপে ব্যাকআপ থেকে রিস্টোর করুন
 restore_from_telegram_backup()
-
-# বর্তমান অথরাইজড ইউজার দেখান
 current_users = get_all_authorized_users()
 print(f"📋 Current authorized users: {current_users}")
-
-# অটো ব্যাকআপ স্টার্ট
 start_auto_backup()
 
 print("✅ Bot is running with Telegram backup & auto restore!")
-print("📌 Data will be backed up to Telegram group every 5 minutes")
-print("📌 If Railway resets, bot will auto-restore from backup on startup")
+print("📌 Admin can use bot without points check")
 print("=" * 60)
 
 last = 0
@@ -762,12 +733,64 @@ while True:
                     phone = data.replace("get_otp_", "")
                     answer_callback(cb_id, "🔍 Checking for OTP...")
                     
-                    if has_user_config(cid):
+                    # অ্যাডমিনের জন্য পয়েন্ট চেক করবে না
+                    if not is_admin(cid):
+                        if has_user_config(cid):
+                            config = get_user_config(cid)
+                            pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
+                            country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
+                            flag = sent_numbers.get(cid, {}).get(phone, {}).get("flag", "")
+                            otp = None
+                            for i in range(12):
+                                time.sleep(3)
+                                result = get_sms(phone, pid, config)
+                                if result:
+                                    otp = result
+                                    new_text = f"""<b>✅ SMS Received!</b>
+<b>Number</b>: <code>{phone}</code>
+<b>Country</b>: {country} {flag}
+<b>Code</b>: <code>{otp}</code> ✅
+<b>Points Used</b>: {OTP_COST}
+<b>Note</b>: Points deducted from your API panel"""
+                                    edit_message(cid, msg_id, new_text)
+                                    break
+                                edit_message(cid, msg_id, f"⏳ Checking OTP... ({i+1}/12)\n📱 {phone}")
+                            if not otp:
+                                delete_message(cid, msg_id)
+                                send_msg(cid, f"❌ No OTP found after 12 attempts.\nNo points deducted.", MAIN_KEYBOARD)
+                        else:
+                            if not has_sufficient_points(cid):
+                                delete_message(cid, msg_id)
+                                send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed: {OTP_COST} points\n\nContact admin to add points.", MAIN_KEYBOARD)
+                                continue
+                            config = get_user_config(cid)
+                            pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
+                            country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
+                            flag = sent_numbers.get(cid, {}).get(phone, {}).get("flag", "")
+                            otp = None
+                            for i in range(12):
+                                time.sleep(3)
+                                otp = get_sms(phone, pid, config)
+                                if otp:
+                                    deduct_user_points(cid, OTP_COST)
+                                    new_text = f"""<b>✅ SMS Received!</b>
+<b>Number</b>: <code>{phone}</code>
+<b>Country</b>: {country} {flag}
+<b>Code</b>: <code>{otp}</code> ✅
+<b>Points Used</b>: {OTP_COST}
+<b>Remaining Balance</b>: {get_user_points(cid)}"""
+                                    edit_message(cid, msg_id, new_text)
+                                    break
+                                edit_message(cid, msg_id, f"⏳ Checking OTP... ({i+1}/12)\n📱 {phone}")
+                            if not otp:
+                                delete_message(cid, msg_id)
+                                send_msg(cid, f"❌ No OTP found after 12 attempts.\nNo points deducted.", MAIN_KEYBOARD)
+                    else:
+                        # অ্যাডমিনের জন্য সরাসরি OTP চেক
                         config = get_user_config(cid)
                         pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
                         country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
                         flag = sent_numbers.get(cid, {}).get(phone, {}).get("flag", "")
-                        
                         otp = None
                         for i in range(12):
                             time.sleep(3)
@@ -777,46 +800,13 @@ while True:
                                 new_text = f"""<b>✅ SMS Received!</b>
 <b>Number</b>: <code>{phone}</code>
 <b>Country</b>: {country} {flag}
-<b>Code</b>: <code>{otp}</code> ✅
-<b>Points Used</b>: {OTP_COST}
-<b>Note</b>: Points deducted from your API panel"""
+<b>Code</b>: <code>{otp}</code> ✅"""
                                 edit_message(cid, msg_id, new_text)
                                 break
                             edit_message(cid, msg_id, f"⏳ Checking OTP... ({i+1}/12)\n📱 {phone}")
-                        
                         if not otp:
                             delete_message(cid, msg_id)
-                            send_msg(cid, f"❌ No OTP found after 12 attempts.\nNo points deducted.", MAIN_KEYBOARD)
-                    else:
-                        if not has_sufficient_points(cid):
-                            delete_message(cid, msg_id)
-                            send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed: {OTP_COST} points\n\nContact admin to add points.", MAIN_KEYBOARD)
-                            continue
-                        
-                        config = get_user_config(cid)
-                        pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
-                        country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
-                        flag = sent_numbers.get(cid, {}).get(phone, {}).get("flag", "")
-                        
-                        otp = None
-                        for i in range(12):
-                            time.sleep(3)
-                            otp = get_sms(phone, pid, config)
-                            if otp:
-                                deduct_user_points(cid, OTP_COST)
-                                new_text = f"""<b>✅ SMS Received!</b>
-<b>Number</b>: <code>{phone}</code>
-<b>Country</b>: {country} {flag}
-<b>Code</b>: <code>{otp}</code> ✅
-<b>Points Used</b>: {OTP_COST}
-<b>Remaining Balance</b>: {get_user_points(cid)}"""
-                                edit_message(cid, msg_id, new_text)
-                                break
-                            edit_message(cid, msg_id, f"⏳ Checking OTP... ({i+1}/12)\n📱 {phone}")
-                        
-                        if not otp:
-                            delete_message(cid, msg_id)
-                            send_msg(cid, f"❌ No OTP found after 12 attempts.\nNo points deducted.", MAIN_KEYBOARD)
+                            send_msg(cid, f"❌ No OTP found after 12 attempts.", MAIN_KEYBOARD)
                 
                 elif data.startswith("block_"):
                     phone = data.replace("block_", "")
@@ -853,7 +843,6 @@ while True:
             if cid == BACKUP_GROUP_ID:
                 continue
             
-            # অথরাইজেশন চেক
             if not is_authorized(cid) and cid not in ADMIN_IDS:
                 if text == "/start":
                     welcome_text = """✨ Welcome to Durian World Bot ✨
@@ -893,7 +882,6 @@ while True:
                         name = " ".join(parts[1:-2]) if len(parts) > 3 else parts[1]
                         cuy = parts[-2] if len(parts) >= 3 else parts[1][:2].lower()
                         flag = parts[-1] if len(parts) >= 3 else "🌍"
-                        
                         add_new_country(code, name, cuy, flag)
                         send_msg(cid, f"✅ Country added!\n\n{name} {flag}\nCode: {code}\nCUY: {cuy}", ADMIN_KEYBOARD)
                     else:
@@ -946,20 +934,16 @@ while True:
                     try:
                         user_input = text.strip()
                         numbers = re.findall(r'\d+', user_input)
-                        
                         if numbers:
                             target_id = int(numbers[0])
-                            
                             if remove_user_config(target_id):
                                 send_msg(cid, f"✅ User {target_id} config has been removed successfully!", USER_CONFIG_KEYBOARD)
                             else:
                                 send_msg(cid, f"⚠️ User {target_id} config not found!", USER_CONFIG_KEYBOARD)
                         else:
                             send_msg(cid, "❌ No valid user ID found! Please enter a numeric user ID.\nExample: 123456789", USER_CONFIG_KEYBOARD)
-                            
                     except Exception as e:
                         send_msg(cid, f"❌ Error: {str(e)}\nPlease enter a valid user ID.\nExample: 123456789", USER_CONFIG_KEYBOARD)
-                    
                     admin_session[cid]["waiting"] = None
                     continue
                 
@@ -1002,16 +986,14 @@ while True:
             if text == "/start":
                 if is_admin(cid):
                     send_msg(cid, "✅ Bot is ready! Use the buttons below.", MAIN_KEYBOARD)
+                elif is_authorized(cid):
+                    send_msg(cid, "✅ Bot is ready! Use the buttons below.", MAIN_KEYBOARD)
                 else:
-                    # ইউজার অথরাইজড কিনা চেক করুন
-                    if is_authorized(cid):
-                        send_msg(cid, "✅ Bot is ready! Use the buttons below.", MAIN_KEYBOARD)
-                    else:
-                        welcome_text = """✨ Welcome to Durian World Bot ✨
+                    welcome_text = """✨ Welcome to Durian World Bot ✨
 
 👉 Contact Now For Access - @Rana1132
 ✡️ Join Now My Channel - @updaterange"""
-                        send_msg(cid, welcome_text, reply_markup=WELCOME_BUTTON)
+                    send_msg(cid, welcome_text, reply_markup=WELCOME_BUTTON)
             
             elif text == "/admin" or text == "👑 Admin Panel":
                 if is_admin(cid):
@@ -1163,10 +1145,12 @@ while True:
             # ============ ইউজার কমান্ড ============
             
             elif text == "➕ Add Countries":
-                if not has_user_config(cid):
-                    if not has_sufficient_points(cid):
-                        send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed at least {OTP_COST} points to use the bot.\n\nContact admin to add points.", MAIN_KEYBOARD)
-                        continue
+                # অ্যাডমিনের জন্য পয়েন্ট চেক করবে না
+                if not is_admin(cid):
+                    if not has_user_config(cid):
+                        if not has_sufficient_points(cid):
+                            send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed at least {OTP_COST} points to use the bot.\n\nContact admin to add points.", MAIN_KEYBOARD)
+                            continue
                 country_list = ", ".join(list(COUNTRIES.keys())[:20])
                 send_msg(cid, f"➕ <b>Add countries</b>\n\nFormat: <code>Bangladesh, India, USA</code>\nor <code>Bangladesh India USA</code>\n\n<b>Examples:</b>\n{country_list}...\n\nEnter country names:", MAIN_KEYBOARD)
                 user_data[cid]['waiting'] = "add_multiple"
@@ -1187,10 +1171,12 @@ while True:
                     send_msg(cid, "📋 No countries to remove.", MAIN_KEYBOARD)
             
             elif text == "🚀 Start Watch":
-                if not has_user_config(cid):
-                    if not has_sufficient_points(cid):
-                        send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed: {OTP_COST} points per OTP\n\nContact admin to add points.", MAIN_KEYBOARD)
-                        continue
+                # অ্যাডমিনের জন্য পয়েন্ট চেক করবে না
+                if not is_admin(cid):
+                    if not has_user_config(cid):
+                        if not has_sufficient_points(cid):
+                            send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed: {OTP_COST} points per OTP\n\nContact admin to add points.", MAIN_KEYBOARD)
+                            continue
                 if not user_data[cid]['countries']:
                     send_msg(cid, "❌ No countries selected!\nPress '➕ Add Countries' first.", MAIN_KEYBOARD)
                 else:
@@ -1216,10 +1202,12 @@ while True:
                 user_data[cid]['waiting'] = "switch_project"
             
             elif text == "📱 Single Number":
-                if not has_user_config(cid):
-                    if not has_sufficient_points(cid):
-                        send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed: {OTP_COST} points\n\nContact admin to add points.", MAIN_KEYBOARD)
-                        continue
+                # অ্যাডমিনের জন্য পয়েন্ট চেক করবে না
+                if not is_admin(cid):
+                    if not has_user_config(cid):
+                        if not has_sufficient_points(cid):
+                            send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed: {OTP_COST} points\n\nContact admin to add points.", MAIN_KEYBOARD)
+                            continue
                 if user_data[cid]['single_country']:
                     country = find_country(user_data[cid]['single_country'])
                     if country:
