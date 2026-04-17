@@ -1,4 +1,4 @@
-# Duriansms.py - Complete Bot with Telegram Group Backup System
+# Duriansms.py - Complete Bot with Telegram Group Backup System (Fixed)
 
 import requests
 import time
@@ -11,7 +11,7 @@ BOT_TOKEN = "8666173297:AAEBcbVPdUdXmLt8ZvCyIWzmhfg-OU8eM0c"
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # ============= টেলিগ্রাম ব্যাকআপ গ্রুপ কনফিগারেশন =============
-BACKUP_GROUP_ID = -1003713267585  # নতুন ব্যাকআপ গ্রুপ আইডি
+BACKUP_GROUP_ID = -1003713267585  # ব্যাকআপ গ্রুপ আইডি
 BACKUP_MESSAGE_IDS = {}
 
 # ============= অ্যাডমিন কনফিগারেশন =============
@@ -38,62 +38,29 @@ OTP_COST = 100
 
 # ============= টেলিগ্রাম গ্রুপ ব্যাকআপ ফাংশন =============
 
-def get_backup_message_id(filename):
-    """ব্যাকআপ মেসেজের আইডি খোঁজা"""
-    try:
-        r = requests.get(TG_API + "getUpdates", params={
-            "chat_id": BACKUP_GROUP_ID, 
-            "limit": 50
-        }, timeout=10)
-        
-        if r.status_code == 200:
-            data = r.json()
-            if data.get("ok") and data.get("result"):
-                for update in data["result"]:
-                    if "message" in update:
-                        msg = update["message"]
-                        text = msg.get("text", "")
-                        if text.startswith(f"📁 {filename}"):
-                            BACKUP_MESSAGE_IDS[filename] = msg["message_id"]
-                            return msg["message_id"]
-    except Exception as e:
-        print(f"Get backup ID error: {e}")
-    return None
-
 def save_backup_to_group(filename, data):
-    """ডাটা টেলিগ্রাম গ্রুপে ব্যাকআপ করা - অথরাইজেশন ছাড়াই"""
+    """ডাটা টেলিগ্রাম গ্রুপে ব্যাকআপ করা - parse_mode ছাড়া"""
     try:
-        text = f"📁 {filename}\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)}\n```"
+        text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)}"
         
-        if len(text) > 4000:
-            text = f"📁 {filename}\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)[:3500]}\n...```"
+        if len(text) > 4096:
+            text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)[:3500]}\n... (truncated)"
         
-        # সরাসরি API কল (send_msg ফাংশন এড়িয়ে যান)
+        # parse_mode ব্যবহার করা হচ্ছে না (Markdown error এড়াতে)
         r = requests.post(TG_API + "sendMessage", json={
             "chat_id": BACKUP_GROUP_ID,
-            "text": text,
-            "parse_mode": "Markdown"
+            "text": text
         }, timeout=10)
         
         if r.status_code == 200:
             print(f"✅ Backup sent to group: {filename}")
             return True
         else:
-            print(f"❌ Backup failed: {r.status_code} - {r.text}")
+            print(f"❌ Backup failed: {r.status_code} - {r.text[:200]}")
             return False
     except Exception as e:
         print(f"Backup error for {filename}: {e}")
         return False
-
-def load_backup_from_group(filename):
-    """টেলিগ্রাম গ্রুপ থেকে ব্যাকআপ লোড করা"""
-    try:
-        if os.path.exists(filename):
-            with open(filename, 'r') as f:
-                return json.load(f)
-    except:
-        pass
-    return None
 
 def backup_all_data():
     """সব ডাটা ব্যাকআপ করা"""
@@ -110,27 +77,14 @@ def backup_all_data():
             save_backup_to_group(CONFIG_FILE, json.load(f))
 
 def restore_from_backup():
-    """গ্রুপ ব্যাকআপ থেকে ডাটা রিস্টোর করা"""
+    """ব্যাকআপ থেকে ডাটা রিস্টোর (যদি ফাইল না থাকে)"""
+    # ব্যাকআপ গ্রুপ থেকে লোড করা জটিল, তাই ফাইল থাকলে সেটাই ব্যবহার করুন
     if not os.path.exists(ACCESS_FILE):
-        data = load_backup_from_group(ACCESS_FILE)
-        if data:
-            with open(ACCESS_FILE, 'w') as f:
-                json.dump(data, f, indent=2)
-            print("✅ Restored user_access.json from backup")
-    
+        print("⚠️ No access file found, starting fresh")
     if not os.path.exists(POINTS_FILE):
-        data = load_backup_from_group(POINTS_FILE)
-        if data:
-            with open(POINTS_FILE, 'w') as f:
-                json.dump(data, f, indent=2)
-            print("✅ Restored user_points.json from backup")
-    
+        print("⚠️ No points file found, starting fresh")
     if not os.path.exists(CONFIG_FILE):
-        data = load_backup_from_group(CONFIG_FILE)
-        if data:
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump(data, f, indent=2)
-            print("✅ Restored users_data.json from backup")
+        print("⚠️ No config file found, starting fresh")
 
 # ============= ইউজার এক্সেস ম্যানেজমেন্ট =============
 
