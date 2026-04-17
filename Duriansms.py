@@ -1,4 +1,4 @@
-# Duriansms.py - Complete Bot with Telegram Group Backup System (Fixed)
+# Duriansms.py - Complete Bot with Auto Restore from Telegram Backup (Fixed)
 
 import requests
 import time
@@ -15,7 +15,7 @@ BACKUP_GROUP_ID = -1003713267585  # ব্যাকআপ গ্রুপ আই
 BACKUP_MESSAGE_IDS = {}
 
 # ============= অ্যাডমিন কনফিগারেশন =============
-ADMIN_IDS = [948283424, -1003713267585]  # আপনার ইউজার আইডি + ব্যাকআপ গ্রুপ আইডি
+ADMIN_IDS = [948283424, -1003713267585]
 ADMIN_PASSWORD = "mamun1132"
 ADMIN_USERNAME = "rana1132"
 CHANNEL_LINK = "https://t.me/updaterange"
@@ -36,17 +36,120 @@ DEFAULT_CONFIG = {
 DEFAULT_POINTS = 0
 OTP_COST = 100
 
-# ============= টেলিগ্রাম গ্রুপ ব্যাকআপ ফাংশন =============
+# ============= টেলিগ্রাম গ্রুপ থেকে ব্যাকআপ রিস্টোর ফাংশন (আপডেটেড) =============
+
+def get_all_group_messages():
+    """গ্রুপের সব মেসেজ সংগ্রহ করা"""
+    messages = []
+    offset = 0
+    
+    try:
+        while True:
+            r = requests.get(TG_API + "getUpdates", params={
+                "chat_id": BACKUP_GROUP_ID,
+                "offset": offset,
+                "limit": 100
+            }, timeout=10)
+            
+            if r.status_code == 200:
+                data = r.json()
+                if not data.get("ok") or not data.get("result"):
+                    break
+                
+                for update in data["result"]:
+                    if "message" in update:
+                        messages.append(update["message"])
+                        offset = update["update_id"] + 1
+                if len(data["result"]) < 100:
+                    break
+            else:
+                break
+    except Exception as e:
+        print(f"Get messages error: {e}")
+    
+    return messages
+
+def restore_from_telegram_backup():
+    """টেলিগ্রাম গ্রুপ থেকে ব্যাকআপ রিস্টোর করা"""
+    print("🔄 Checking for backups in Telegram group...")
+    
+    messages = get_all_group_messages()
+    
+    if not messages:
+        print("⚠️ No messages found in backup group")
+        return False
+    
+    restored = False
+    
+    for msg in messages:
+        text = msg.get("text", "")
+        
+        # user_access.json রিস্টোর
+        if text.startswith("📁 user_access.json"):
+            try:
+                json_part = text.replace("📁 user_access.json", "").strip()
+                # JSON পার্স করার আগে ক্লিনআপ
+                json_part = json_part.replace("```json", "").replace("```", "").strip()
+                data = json.loads(json_part)
+                with open(ACCESS_FILE, 'w') as f:
+                    json.dump(data, f, indent=2)
+                print(f"✅ Restored {ACCESS_FILE} from backup")
+                print(f"   Authorized users: {data.get('authorized_users', [])}")
+                restored = True
+            except Exception as e:
+                print(f"❌ Failed to restore {ACCESS_FILE}: {e}")
+        
+        # user_points.json রিস্টোর
+        elif text.startswith("📁 user_points.json"):
+            try:
+                json_part = text.replace("📁 user_points.json", "").strip()
+                json_part = json_part.replace("```json", "").replace("```", "").strip()
+                data = json.loads(json_part)
+                with open(POINTS_FILE, 'w') as f:
+                    json.dump(data, f, indent=2)
+                print(f"✅ Restored {POINTS_FILE} from backup")
+                restored = True
+            except Exception as e:
+                print(f"❌ Failed to restore {POINTS_FILE}: {e}")
+        
+        # users_data.json রিস্টোর
+        elif text.startswith("📁 users_data.json"):
+            try:
+                json_part = text.replace("📁 users_data.json", "").strip()
+                json_part = json_part.replace("```json", "").replace("```", "").strip()
+                data = json.loads(json_part)
+                with open(CONFIG_FILE, 'w') as f:
+                    json.dump(data, f, indent=2)
+                print(f"✅ Restored {CONFIG_FILE} from backup")
+                restored = True
+            except Exception as e:
+                print(f"❌ Failed to restore {CONFIG_FILE}: {e}")
+    
+    if not restored:
+        print("⚠️ No backup files found in group, creating fresh files")
+        # নতুন ফাইল তৈরি করুন
+        if not os.path.exists(ACCESS_FILE):
+            with open(ACCESS_FILE, 'w') as f:
+                json.dump({"authorized_users": []}, f, indent=2)
+        if not os.path.exists(POINTS_FILE):
+            with open(POINTS_FILE, 'w') as f:
+                json.dump({}, f, indent=2)
+        if not os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump({}, f, indent=2)
+    else:
+        print("✅ Backup restore completed!")
+    
+    return restored
 
 def save_backup_to_group(filename, data):
-    """ডাটা টেলিগ্রাম গ্রুপে ব্যাকআপ করা - parse_mode ছাড়া"""
+    """ডাটা টেলিগ্রাম গ্রুপে ব্যাকআপ করা"""
     try:
         text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)}"
         
         if len(text) > 4096:
             text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)[:3500]}\n... (truncated)"
         
-        # parse_mode ব্যবহার করা হচ্ছে না (Markdown error এড়াতে)
         r = requests.post(TG_API + "sendMessage", json={
             "chat_id": BACKUP_GROUP_ID,
             "text": text
@@ -76,23 +179,17 @@ def backup_all_data():
         with open(CONFIG_FILE, 'r') as f:
             save_backup_to_group(CONFIG_FILE, json.load(f))
 
-def restore_from_backup():
-    """ব্যাকআপ থেকে ডাটা রিস্টোর (যদি ফাইল না থাকে)"""
-    # ব্যাকআপ গ্রুপ থেকে লোড করা জটিল, তাই ফাইল থাকলে সেটাই ব্যবহার করুন
-    if not os.path.exists(ACCESS_FILE):
-        print("⚠️ No access file found, starting fresh")
-    if not os.path.exists(POINTS_FILE):
-        print("⚠️ No points file found, starting fresh")
-    if not os.path.exists(CONFIG_FILE):
-        print("⚠️ No config file found, starting fresh")
-
 # ============= ইউজার এক্সেস ম্যানেজমেন্ট =============
 
 def load_access():
     if os.path.exists(ACCESS_FILE):
         try:
             with open(ACCESS_FILE, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+                # নিশ্চিত করুন authorized_users লিস্ট আছে
+                if "authorized_users" not in data:
+                    data = {"authorized_users": []}
+                return data
         except:
             return {"authorized_users": []}
     return {"authorized_users": []}
@@ -106,24 +203,41 @@ def save_access(access_data):
         pass
 
 def is_authorized(user_id):
+    # অ্যাডমিন সবসময় অথরাইজড
     if user_id in ADMIN_IDS:
         return True
+    
+    # ফাইল থেকে অথরাইজড ইউজার লিস্ট লোড করুন
     access_data = load_access()
-    return user_id in access_data.get("authorized_users", [])
+    authorized = access_data.get("authorized_users", [])
+    
+    # ডিবাগ প্রিন্ট (প্রথমবারের জন্য)
+    print(f"🔍 Checking authorization for {user_id}")
+    print(f"   Authorized list: {authorized}")
+    
+    return user_id in authorized
 
 def add_user_access(user_id):
     access_data = load_access()
+    if "authorized_users" not in access_data:
+        access_data["authorized_users"] = []
+    
     if user_id not in access_data["authorized_users"]:
         access_data["authorized_users"].append(user_id)
         save_access(access_data)
+        print(f"✅ User {user_id} added to authorized list")
         return True
     return False
 
 def remove_user_access(user_id):
     access_data = load_access()
+    if "authorized_users" not in access_data:
+        access_data["authorized_users"] = []
+    
     if user_id in access_data["authorized_users"]:
         access_data["authorized_users"].remove(user_id)
         save_access(access_data)
+        print(f"✅ User {user_id} removed from authorized list")
         return True
     return False
 
@@ -348,7 +462,6 @@ def get_inline_buttons(phone, country_name, flag):
 # ============= API ফাংশন =============
 
 def send_msg(chat_id, text, kb=None, reply_markup=None):
-    # ব্যাকআপ গ্রুপের জন্য অথরাইজেশন চেক বাইপাস
     if chat_id == BACKUP_GROUP_ID:
         data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
         if kb:
@@ -360,7 +473,6 @@ def send_msg(chat_id, text, kb=None, reply_markup=None):
         except:
             return None
     
-    # সাধারণ ইউজারের জন্য অথরাইজেশন চেক
     if not is_authorized(chat_id) and chat_id not in ADMIN_IDS:
         return None
     
@@ -605,7 +717,7 @@ def start_auto_backup():
 # ============= মেইন লুপ =============
 
 print("=" * 60)
-print("🤖 Durian SMS Bot - Telegram Backup Edition")
+print("🤖 Durian SMS Bot - Auto Restore from Telegram Backup")
 print("=" * 60)
 print(f"👤 Admin ID: {ADMIN_IDS}")
 print(f"🔑 Admin Password: {ADMIN_PASSWORD}")
@@ -614,14 +726,19 @@ print(f"🌍 Total Countries: {len(COUNTRIES)}")
 print(f"💰 OTP Cost: {OTP_COST} points")
 print("=" * 60)
 
-# ডাটা রিস্টোর
-restore_from_backup()
+# 🔄 বট স্টার্ট আপে ব্যাকআপ থেকে রিস্টোর করুন
+restore_from_telegram_backup()
+
+# বর্তমান অথরাইজড ইউজার দেখান
+current_users = get_all_authorized_users()
+print(f"📋 Current authorized users: {current_users}")
 
 # অটো ব্যাকআপ স্টার্ট
 start_auto_backup()
 
-print("✅ Bot is running with Telegram backup!")
+print("✅ Bot is running with Telegram backup & auto restore!")
 print("📌 Data will be backed up to Telegram group every 5 minutes")
+print("📌 If Railway resets, bot will auto-restore from backup on startup")
 print("=" * 60)
 
 last = 0
@@ -733,10 +850,10 @@ while True:
             
             print(f"📨 {cid}: {text}")
             
-            # ব্যাকআপ গ্রুপের জন্য অথরাইজেশন চেক বাইপাস
             if cid == BACKUP_GROUP_ID:
                 continue
             
+            # অথরাইজেশন চেক
             if not is_authorized(cid) and cid not in ADMIN_IDS:
                 if text == "/start":
                     welcome_text = """✨ Welcome to Durian World Bot ✨
@@ -886,11 +1003,15 @@ while True:
                 if is_admin(cid):
                     send_msg(cid, "✅ Bot is ready! Use the buttons below.", MAIN_KEYBOARD)
                 else:
-                    welcome_text = """✨ Welcome to Durian World Bot ✨
+                    # ইউজার অথরাইজড কিনা চেক করুন
+                    if is_authorized(cid):
+                        send_msg(cid, "✅ Bot is ready! Use the buttons below.", MAIN_KEYBOARD)
+                    else:
+                        welcome_text = """✨ Welcome to Durian World Bot ✨
 
 👉 Contact Now For Access - @Rana1132
 ✡️ Join Now My Channel - @updaterange"""
-                    send_msg(cid, welcome_text, reply_markup=WELCOME_BUTTON)
+                        send_msg(cid, welcome_text, reply_markup=WELCOME_BUTTON)
             
             elif text == "/admin" or text == "👑 Admin Panel":
                 if is_admin(cid):
