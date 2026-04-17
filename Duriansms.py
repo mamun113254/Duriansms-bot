@@ -1,4 +1,4 @@
-# smsbot_final_complete.py - Complete Bot with Admin Panel & User Access Management & Points System
+# Duriansms.py - Complete Bot with Telegram Group Backup System
 
 import requests
 import time
@@ -10,14 +10,20 @@ import os
 BOT_TOKEN = "8666173297:AAEBcbVPdUdXmLt8ZvCyIWzmhfg-OU8eM0c"
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
+# ============= টেলিগ্রাম ব্যাকআপ গ্রুপ কনফিগারেশন =============
+BACKUP_GROUP_ID = -1003732536424  # আপনার গ্রুপের আইডি
+BACKUP_MESSAGE_IDS = {}  # বিভিন্ন ফাইলের মেসেজ আইডি স্টোর
+
 # ============= অ্যাডমিন কনফিগারেশন =============
-ADMIN_IDS = [948283424]  # আপনার টেলিগ্রাম ইউজার আইডি
-ADMIN_PASSWORD = "mamun1132"  # অ্যাডমিন মেনুর পাসওয়ার্ড
-ADMIN_USERNAME = "rana1132"  # অ্যাডমিনের টেলিগ্রাম ইউজারনাম
-CHANNEL_LINK = "https://t.me/updaterange"  # চ্যানেল লিংক
-DATA_FILE = "users_data.json"
+ADMIN_IDS = [948283424]
+ADMIN_PASSWORD = "mamun1132"
+ADMIN_USERNAME = "rana1132"
+CHANNEL_LINK = "https://t.me/updaterange"
+
+# ============= ফাইল নাম =============
 ACCESS_FILE = "user_access.json"
 POINTS_FILE = "user_points.json"
+CONFIG_FILE = "users_data.json"
 
 # ============= ডিফল্ট কনফিগারেশন =============
 DEFAULT_CONFIG = {
@@ -27,118 +33,120 @@ DEFAULT_CONFIG = {
 }
 
 # ============= পয়েন্ট সিস্টেম =============
-DEFAULT_POINTS = 0  # নতুন ইউজার 0 পয়েন্ট পাবে
-OTP_COST = 100      # প্রতিটি OTP পেতে 100 পয়েন্ট কাটবে
+DEFAULT_POINTS = 0
+OTP_COST = 100
 
-def load_points():
-    if os.path.exists(POINTS_FILE):
-        try:
-            with open(POINTS_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
+# ============= টেলিগ্রাম গ্রুপ ব্যাকআপ ফাংশন =============
 
-def save_points(points_data):
+def get_backup_message_id(filename):
+    """ব্যাকআপ মেসেজের আইডি খোঁজা"""
     try:
-        with open(POINTS_FILE, 'w') as f:
-            json.dump(points_data, f, indent=2)
-    except:
-        pass
-
-def get_user_points(chat_id):
-    points = load_points()
-    return points.get(str(chat_id), 0)
-
-def set_user_points(chat_id, points):
-    points_data = load_points()
-    points_data[str(chat_id)] = points
-    save_points(points_data)
-
-def add_user_points(chat_id, points):
-    current = get_user_points(chat_id)
-    set_user_points(chat_id, current + points)
-
-def deduct_user_points(chat_id, points):
-    current = get_user_points(chat_id)
-    if current >= points:
-        set_user_points(chat_id, current - points)
-        return True
-    return False
-
-def has_sufficient_points(chat_id):
-    return get_user_points(chat_id) >= OTP_COST
-
-# ============= API থেকে রিয়েল ব্যালেন্স আনার ফাংশন =============
-
-def get_real_api_balance(username, api_key, base_url):
-    """ইউজারের নিজের API প্যানেল থেকে রিয়েল ব্যালেন্স আনা"""
-    try:
-        url = f"{base_url}/getUserInfo"
-        params = {"name": username, "ApiKey": api_key}
-        r = requests.get(url, params=params, timeout=10)
+        # গ্রুপের আপডেট চেক
+        r = requests.get(TG_API + "getUpdates", params={
+            "chat_id": BACKUP_GROUP_ID, 
+            "limit": 50
+        }, timeout=10)
+        
         if r.status_code == 200:
             data = r.json()
-            if data.get("code") == 200:
-                return data.get("data", {}).get("score", 0)
-        return None
-    except:
-        return None
+            if data.get("ok") and data.get("result"):
+                for update in data["result"]:
+                    if "message" in update:
+                        msg = update["message"]
+                        text = msg.get("text", "")
+                        if text.startswith(f"📁 {filename}"):
+                            BACKUP_MESSAGE_IDS[filename] = msg["message_id"]
+                            return msg["message_id"]
+    except Exception as e:
+        print(f"Get backup ID error: {e}")
+    return None
 
-# ============= সব দেশের সম্পূর্ণ তালিকা =============
-COUNTRIES = {
-    "bangladesh": {"code": "+880", "name": "Bangladesh", "cuy": "bd", "flag": "🇧🇩"},
-    "india": {"code": "+91", "name": "India", "cuy": "in", "flag": "🇮🇳"},
-    "usa": {"code": "+1", "name": "USA", "cuy": "us", "flag": "🇺🇸"},
-    "uk": {"code": "+44", "name": "United Kingdom", "cuy": "uk", "flag": "🇬🇧"},
-    "canada": {"code": "+1", "name": "Canada", "cuy": "ca", "flag": "🇨🇦"},
-    "australia": {"code": "+61", "name": "Australia", "cuy": "au", "flag": "🇦🇺"},
-    "germany": {"code": "+49", "name": "Germany", "cuy": "de", "flag": "🇩🇪"},
-    "france": {"code": "+33", "name": "France", "cuy": "fr", "flag": "🇫🇷"},
-    "italy": {"code": "+39", "name": "Italy", "cuy": "it", "flag": "🇮🇹"},
-    "spain": {"code": "+34", "name": "Spain", "cuy": "es", "flag": "🇪🇸"},
-    "turkey": {"code": "+90", "name": "Turkey", "cuy": "tr", "flag": "🇹🇷"},
-    "egypt": {"code": "+20", "name": "Egypt", "cuy": "eg", "flag": "🇪🇬"},
-    "uae": {"code": "+971", "name": "UAE", "cuy": "ae", "flag": "🇦🇪"},
-    "saudiarabia": {"code": "+966", "name": "Saudi Arabia", "cuy": "sa", "flag": "🇸🇦"},
-    "thailand": {"code": "+66", "name": "Thailand", "cuy": "th", "flag": "🇹🇭"},
-    "malaysia": {"code": "+60", "name": "Malaysia", "cuy": "my", "flag": "🇲🇾"},
-    "indonesia": {"code": "+62", "name": "Indonesia", "cuy": "id", "flag": "🇮🇩"},
-    "vietnam": {"code": "+84", "name": "Vietnam", "cuy": "vn", "flag": "🇻🇳"},
-    "philippines": {"code": "+63", "name": "Philippines", "cuy": "ph", "flag": "🇵🇭"},
-    "japan": {"code": "+81", "name": "Japan", "cuy": "jp", "flag": "🇯🇵"},
-    "southkorea": {"code": "+82", "name": "South Korea", "cuy": "kr", "flag": "🇰🇷"},
-    "russia": {"code": "+7", "name": "Russia", "cuy": "ru", "flag": "🇷🇺"},
-    "brazil": {"code": "+55", "name": "Brazil", "cuy": "br", "flag": "🇧🇷"},
-    "mexico": {"code": "+52", "name": "Mexico", "cuy": "mx", "flag": "🇲🇽"},
-    "southafrica": {"code": "+27", "name": "South Africa", "cuy": "za", "flag": "🇿🇦"},
-    "nigeria": {"code": "+234", "name": "Nigeria", "cuy": "ng", "flag": "🇳🇬"},
-    "kenya": {"code": "+254", "name": "Kenya", "cuy": "ke", "flag": "🇰🇪"},
-    "ghana": {"code": "+233", "name": "Ghana", "cuy": "gh", "flag": "🇬🇭"},
-    "morocco": {"code": "+212", "name": "Morocco", "cuy": "ma", "flag": "🇲🇦"},
-    "algeria": {"code": "+213", "name": "Algeria", "cuy": "dz", "flag": "🇩🇿"},
-    "tunisia": {"code": "+216", "name": "Tunisia", "cuy": "tn", "flag": "🇹🇳"},
-    "libya": {"code": "+218", "name": "Libya", "cuy": "ly", "flag": "🇱🇾"},
-    "sudan": {"code": "+249", "name": "Sudan", "cuy": "sd", "flag": "🇸🇩"},
-    "ethiopia": {"code": "+251", "name": "Ethiopia", "cuy": "et", "flag": "🇪🇹"},
-    "tanzania": {"code": "+255", "name": "Tanzania", "cuy": "tz", "flag": "🇹🇿"},
-    "uganda": {"code": "+256", "name": "Uganda", "cuy": "ug", "flag": "🇺🇬"},
-    "rwanda": {"code": "+250", "name": "Rwanda", "cuy": "rw", "flag": "🇷🇼"},
-    "zimbabwe": {"code": "+263", "name": "Zimbabwe", "cuy": "zw", "flag": "🇿🇼"},
-    "zambia": {"code": "+260", "name": "Zambia", "cuy": "zm", "flag": "🇿🇲"},
-    "mozambique": {"code": "+258", "name": "Mozambique", "cuy": "mz", "flag": "🇲🇿"},
-    "angola": {"code": "+244", "name": "Angola", "cuy": "ao", "flag": "🇦🇴"},
-    "congo": {"code": "+242", "name": "Congo", "cuy": "cg", "flag": "🇨🇬"},
-    "cameroon": {"code": "+237", "name": "Cameroon", "cuy": "cm", "flag": "🇨🇲"},
-    "senegal": {"code": "+221", "name": "Senegal", "cuy": "sn", "flag": "🇸🇳"},
-    "mali": {"code": "+223", "name": "Mali", "cuy": "ml", "flag": "🇲🇱"},
-    "niger": {"code": "+227", "name": "Niger", "cuy": "ne", "flag": "🇳🇪"},
-    "chad": {"code": "+235", "name": "Chad", "cuy": "td", "flag": "🇹🇩"},
-    "burkinafaso": {"code": "+226", "name": "Burkina Faso", "cuy": "bf", "flag": "🇧🇫"},
-    "benin": {"code": "+229", "name": "Benin", "cuy": "bj", "flag": "🇧🇯"},
-    "togo": {"code": "+228", "name": "Togo", "cuy": "tg", "flag": "🇹🇬"},
-    "ivorycoast": {"code": "+225", "name": "Ivory Coast", "cuy": "ci", "flag": "🇨🇮"},
-}
+def save_backup_to_group(filename, data):
+    """ডাটা টেলিগ্রাম গ্রুপে ব্যাকআপ করা"""
+    try:
+        text = f"📁 {filename}\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)}\n```"
+        
+        # লম্বা টেক্সট হলে কাটা
+        if len(text) > 4000:
+            text = f"📁 {filename}\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)[:3500]}\n...```"
+        
+        msg_id = BACKUP_MESSAGE_IDS.get(filename)
+        
+        if msg_id:
+            # পুরনো মেসেজ এডিট করুন
+            requests.post(TG_API + "editMessageText", json={
+                "chat_id": BACKUP_GROUP_ID,
+                "message_id": msg_id,
+                "text": text,
+                "parse_mode": "Markdown"
+            }, timeout=10)
+        else:
+            # নতুন মেসেজ তৈরি করুন
+            r = requests.post(TG_API + "sendMessage", json={
+                "chat_id": BACKUP_GROUP_ID,
+                "text": text,
+                "parse_mode": "Markdown"
+            }, timeout=10)
+            if r.status_code == 200:
+                BACKUP_MESSAGE_IDS[filename] = r.json()["result"]["message_id"]
+        
+        return True
+    except Exception as e:
+        print(f"Backup error for {filename}: {e}")
+        return False
+
+def load_backup_from_group(filename):
+    """টেলিগ্রাম গ্রুপ থেকে ব্যাকআপ লোড করা"""
+    try:
+        msg_id = get_backup_message_id(filename)
+        if not msg_id:
+            return None
+        
+        # ফরওয়ার্ড করে মেসেজ পাওয়া যায় না, তাই getUpdates দিয়ে ইতিহাস পাওয়া যায় না
+        # এই কারণে ফাইল থেকে লোড করাই ভালো
+        if os.path.exists(filename):
+            with open(filename, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return None
+
+def backup_all_data():
+    """সব ডাটা ব্যাকআপ করা"""
+    if os.path.exists(ACCESS_FILE):
+        with open(ACCESS_FILE, 'r') as f:
+            save_backup_to_group(ACCESS_FILE, json.load(f))
+    
+    if os.path.exists(POINTS_FILE):
+        with open(POINTS_FILE, 'r') as f:
+            save_backup_to_group(POINTS_FILE, json.load(f))
+    
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'r') as f:
+            save_backup_to_group(CONFIG_FILE, json.load(f))
+
+def restore_from_backup():
+    """গ্রুপ ব্যাকআপ থেকে ডাটা রিস্টোর করা (যদি ফাইল না থাকে)"""
+    if not os.path.exists(ACCESS_FILE):
+        data = load_backup_from_group(ACCESS_FILE)
+        if data:
+            with open(ACCESS_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+            print("✅ Restored user_access.json from backup")
+    
+    if not os.path.exists(POINTS_FILE):
+        data = load_backup_from_group(POINTS_FILE)
+        if data:
+            with open(POINTS_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+            print("✅ Restored user_points.json from backup")
+    
+    if not os.path.exists(CONFIG_FILE):
+        data = load_backup_from_group(CONFIG_FILE)
+        if data:
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
+            print("✅ Restored users_data.json from backup")
 
 # ============= ইউজার এক্সেস ম্যানেজমেন্ট =============
 
@@ -155,6 +163,7 @@ def save_access(access_data):
     try:
         with open(ACCESS_FILE, 'w') as f:
             json.dump(access_data, f, indent=2)
+        save_backup_to_group(ACCESS_FILE, access_data)
     except:
         pass
 
@@ -184,12 +193,54 @@ def get_all_authorized_users():
     access_data = load_access()
     return access_data.get("authorized_users", [])
 
-# ============= ইউজার কনফিগারেশন (API Key & Username) =============
+# ============= পয়েন্ট ম্যানেজমেন্ট =============
+
+def load_points():
+    if os.path.exists(POINTS_FILE):
+        try:
+            with open(POINTS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_points(points_data):
+    try:
+        with open(POINTS_FILE, 'w') as f:
+            json.dump(points_data, f, indent=2)
+        save_backup_to_group(POINTS_FILE, points_data)
+    except:
+        pass
+
+def get_user_points(chat_id):
+    points = load_points()
+    return points.get(str(chat_id), 0)
+
+def set_user_points(chat_id, points):
+    points_data = load_points()
+    points_data[str(chat_id)] = points
+    save_points(points_data)
+
+def add_user_points(chat_id, points):
+    current = get_user_points(chat_id)
+    set_user_points(chat_id, current + points)
+
+def deduct_user_points(chat_id, points):
+    current = get_user_points(chat_id)
+    if current >= points:
+        set_user_points(chat_id, current - points)
+        return True
+    return False
+
+def has_sufficient_points(chat_id):
+    return get_user_points(chat_id) >= OTP_COST
+
+# ============= ইউজার কনফিগারেশন =============
 
 def load_user_configs():
-    if os.path.exists(DATA_FILE):
+    if os.path.exists(CONFIG_FILE):
         try:
-            with open(DATA_FILE, 'r') as f:
+            with open(CONFIG_FILE, 'r') as f:
                 return json.load(f)
         except:
             return {}
@@ -197,8 +248,9 @@ def load_user_configs():
 
 def save_user_configs(configs):
     try:
-        with open(DATA_FILE, 'w') as f:
+        with open(CONFIG_FILE, 'w') as f:
             json.dump(configs, f, indent=2)
+        save_backup_to_group(CONFIG_FILE, configs)
     except:
         pass
 
@@ -233,8 +285,56 @@ def has_user_config(chat_id):
     configs = load_user_configs()
     return str(chat_id) in configs
 
-# ============= গ্লোবাল ভেরিয়েবল =============
+# ============= API থেকে রিয়েল ব্যালেন্স আনার ফাংশন =============
 
+def get_real_api_balance(username, api_key, base_url):
+    try:
+        url = f"{base_url}/getUserInfo"
+        params = {"name": username, "ApiKey": api_key}
+        r = requests.get(url, params=params, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if data.get("code") == 200:
+                return data.get("data", {}).get("score", 0)
+        return None
+    except:
+        return None
+
+# ============= সব দেশের তালিকা =============
+COUNTRIES = {
+    "bangladesh": {"code": "+880", "name": "Bangladesh", "cuy": "bd", "flag": "🇧🇩"},
+    "india": {"code": "+91", "name": "India", "cuy": "in", "flag": "🇮🇳"},
+    "usa": {"code": "+1", "name": "USA", "cuy": "us", "flag": "🇺🇸"},
+    "uk": {"code": "+44", "name": "United Kingdom", "cuy": "uk", "flag": "🇬🇧"},
+    "canada": {"code": "+1", "name": "Canada", "cuy": "ca", "flag": "🇨🇦"},
+    "australia": {"code": "+61", "name": "Australia", "cuy": "au", "flag": "🇦🇺"},
+    "germany": {"code": "+49", "name": "Germany", "cuy": "de", "flag": "🇩🇪"},
+    "france": {"code": "+33", "name": "France", "cuy": "fr", "flag": "🇫🇷"},
+    "italy": {"code": "+39", "name": "Italy", "cuy": "it", "flag": "🇮🇹"},
+    "spain": {"code": "+34", "name": "Spain", "cuy": "es", "flag": "🇪🇸"},
+    "turkey": {"code": "+90", "name": "Turkey", "cuy": "tr", "flag": "🇹🇷"},
+    "egypt": {"code": "+20", "name": "Egypt", "cuy": "eg", "flag": "🇪🇬"},
+    "uae": {"code": "+971", "name": "UAE", "cuy": "ae", "flag": "🇦🇪"},
+    "saudiarabia": {"code": "+966", "name": "Saudi Arabia", "cuy": "sa", "flag": "🇸🇦"},
+    "thailand": {"code": "+66", "name": "Thailand", "cuy": "th", "flag": "🇹🇭"},
+    "malaysia": {"code": "+60", "name": "Malaysia", "cuy": "my", "flag": "🇲🇾"},
+    "indonesia": {"code": "+62", "name": "Indonesia", "cuy": "id", "flag": "🇮🇩"},
+    "vietnam": {"code": "+84", "name": "Vietnam", "cuy": "vn", "flag": "🇻🇳"},
+    "philippines": {"code": "+63", "name": "Philippines", "cuy": "ph", "flag": "🇵🇭"},
+    "japan": {"code": "+81", "name": "Japan", "cuy": "jp", "flag": "🇯🇵"},
+    "southkorea": {"code": "+82", "name": "South Korea", "cuy": "kr", "flag": "🇰🇷"},
+    "russia": {"code": "+7", "name": "Russia", "cuy": "ru", "flag": "🇷🇺"},
+    "brazil": {"code": "+55", "name": "Brazil", "cuy": "br", "flag": "🇧🇷"},
+    "mexico": {"code": "+52", "name": "Mexico", "cuy": "mx", "flag": "🇲🇽"},
+    "southafrica": {"code": "+27", "name": "South Africa", "cuy": "za", "flag": "🇿🇦"},
+    "nigeria": {"code": "+234", "name": "Nigeria", "cuy": "ng", "flag": "🇳🇬"},
+    "kenya": {"code": "+254", "name": "Kenya", "cuy": "ke", "flag": "🇰🇪"},
+    "ghana": {"code": "+233", "name": "Ghana", "cuy": "gh", "flag": "🇬🇭"},
+    "morocco": {"code": "+212", "name": "Morocco", "cuy": "ma", "flag": "🇲🇦"},
+    "algeria": {"code": "+213", "name": "Algeria", "cuy": "dz", "flag": "🇩🇿"},
+}
+
+# ============= গ্লোবাল ভেরিয়েবল =============
 user_data = {}
 running_watches = {}
 sent_numbers = {}
@@ -289,7 +389,6 @@ POINTS_KEYBOARD = {
     "resize_keyboard": True
 }
 
-# ওয়েলকাম বাটন (অ্যাক্সেস না থাকলে)
 WELCOME_BUTTON = {
     "inline_keyboard": [
         [
@@ -499,7 +598,6 @@ def start_auto_watch(chat_id):
     if running_watches.get(chat_id, {}).get("active"):
         return False
     
-    # User Access Management এর ইউজারদের জন্য পয়েন্ট চেক
     if not has_user_config(chat_id):
         if not has_sufficient_points(chat_id):
             send_msg(chat_id, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(chat_id)} points\nNeed: {OTP_COST} points per OTP\n\nContact admin to add points.", MAIN_KEYBOARD)
@@ -534,16 +632,42 @@ def stop_auto_watch(chat_id):
 def is_admin(chat_id):
     return chat_id in ADMIN_IDS
 
+# ============= ব্যাকআপ থ্রেড (প্রতি ৫ মিনিটে) =============
+
+def auto_backup_worker():
+    """প্রতি ৫ মিনিটে自動ব্যাকআপ"""
+    while True:
+        time.sleep(300)  # 5 মিনিট
+        try:
+            backup_all_data()
+            print("✅ Auto backup completed")
+        except Exception as e:
+            print(f"Auto backup error: {e}")
+
+def start_auto_backup():
+    backup_thread = threading.Thread(target=auto_backup_worker, daemon=True)
+    backup_thread.start()
+
 # ============= মেইন লুপ =============
 
 print("=" * 60)
-print("🤖 Durian SMS Bot - Complete Edition")
+print("🤖 Durian SMS Bot - Telegram Backup Edition")
 print("=" * 60)
 print(f"👤 Admin ID: {ADMIN_IDS}")
 print(f"🔑 Admin Password: {ADMIN_PASSWORD}")
+print(f"📁 Backup Group ID: {BACKUP_GROUP_ID}")
 print(f"🌍 Total Countries: {len(COUNTRIES)}")
-print(f"💰 Default Points: {DEFAULT_POINTS}")
-print(f"💸 OTP Cost: {OTP_COST} points")
+print(f"💰 OTP Cost: {OTP_COST} points")
+print("=" * 60)
+
+# ডাটা রিস্টোর
+restore_from_backup()
+
+# অটো ব্যাকআপ স্টার্ট
+start_auto_backup()
+
+print("✅ Bot is running with Telegram backup!")
+print("📌 Data will be backed up to Telegram group every 5 minutes")
 print("=" * 60)
 
 last = 0
@@ -567,9 +691,7 @@ while True:
                     phone = data.replace("get_otp_", "")
                     answer_callback(cb_id, "🔍 Checking for OTP...")
                     
-                    # চেক করুন ইউজারের নিজস্ব কনফিগ আছে কিনা
                     if has_user_config(cid):
-                        # User Config Management - নিজের API প্যানেল ব্যবহার করবে
                         config = get_user_config(cid)
                         pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
                         country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
@@ -595,7 +717,6 @@ while True:
                             delete_message(cid, msg_id)
                             send_msg(cid, f"❌ No OTP found after 12 attempts.\nNo points deducted.", MAIN_KEYBOARD)
                     else:
-                        # User Access Management - বটের পয়েন্ট সিস্টেম ব্যবহার করবে
                         if not has_sufficient_points(cid):
                             delete_message(cid, msg_id)
                             send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed: {OTP_COST} points\n\nContact admin to add points.", MAIN_KEYBOARD)
@@ -658,7 +779,6 @@ while True:
             
             print(f"📨 {cid}: {text}")
             
-            # এক্সেস চেক
             if not is_authorized(cid) and cid not in ADMIN_IDS:
                 if text == "/start":
                     welcome_text = """✨ Welcome to Durian World Bot ✨
@@ -806,10 +926,8 @@ while True:
             
             if text == "/start":
                 if is_admin(cid):
-                    # অ্যাডমিনের জন্য মেইন মেনু
                     send_msg(cid, "✅ Bot is ready! Use the buttons below.", MAIN_KEYBOARD)
                 else:
-                    # সাধারণ ইউজারের জন্য ওয়েলকাম মেসেজ
                     welcome_text = """✨ Welcome to Durian World Bot ✨
 
 👉 Contact Now For Access - @Rana1132
@@ -825,7 +943,6 @@ while True:
             
             elif text == "💰 Balance":
                 if is_admin(cid):
-                    # অ্যাডমিনের নিজের API প্যানেলের রিয়েল ব্যালেন্স
                     config = DEFAULT_CONFIG
                     balance = get_real_api_balance(config['username'], config['api_key'], config['base_url'])
                     if balance is not None:
@@ -833,7 +950,6 @@ while True:
                     else:
                         send_msg(cid, f"💰 <b>Your Balance</b>\n\n❌ Could not fetch balance.\n💸 Cost per OTP: <code>{OTP_COST}</code> points", MAIN_KEYBOARD)
                 elif has_user_config(cid):
-                    # User Config Management - নিজের API প্যানেলের ব্যালেন্স
                     config = get_user_config(cid)
                     balance = get_real_api_balance(config['username'], config['api_key'], config['base_url'])
                     if balance is not None:
@@ -844,7 +960,6 @@ while True:
                     else:
                         send_msg(cid, f"💰 <b>Your Balance</b>\n\n❌ Could not fetch balance. Please check your API configuration.\n💸 Cost per OTP: <code>{OTP_COST}</code> points", MAIN_KEYBOARD)
                 else:
-                    # User Access Management - বটের পয়েন্ট সিস্টেম
                     points = get_user_points(cid)
                     send_msg(cid, f"💰 <b>Your Balance</b>\n\n💎 Points: <code>{points}</code>\n💸 Cost per OTP: <code>{OTP_COST}</code> points\n\nYou can get {points // OTP_COST} more OTPs.", MAIN_KEYBOARD)
             
@@ -880,7 +995,7 @@ while True:
                 if admin_session.get(cid, {}).get("authenticated"):
                     users = get_all_authorized_users()
                     if users:
-                        user_list = "\n".join([f"• {uid} - Balance: {get_user_points(uid)}" for uid in users])
+                        user_list = "\n".join([f"• {uid}" for uid in users])
                         send_msg(cid, f"📋 <b>Authorized Users ({len(users)})</b>\n\n{user_list}", USER_ACCESS_KEYBOARD)
                     else:
                         send_msg(cid, "📋 No authorized users yet.\n\nUse 'Add User Access' to add users.", USER_ACCESS_KEYBOARD)
@@ -974,7 +1089,7 @@ while True:
                         send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed at least {OTP_COST} points to use the bot.\n\nContact admin to add points.", MAIN_KEYBOARD)
                         continue
                 country_list = ", ".join(list(COUNTRIES.keys())[:20])
-                send_msg(cid, f"➕ <b>Add countries</b>\n\nFormat: <code>Cuba, Oman, Thailand, Italy</code>\nor <code>Cuba Oman Thailand Italy</code>\n\n<b>Examples:</b>\n{country_list}...\n\nEnter country names:", MAIN_KEYBOARD)
+                send_msg(cid, f"➕ <b>Add countries</b>\n\nFormat: <code>Bangladesh, India, USA</code>\nor <code>Bangladesh India USA</code>\n\n<b>Examples:</b>\n{country_list}...\n\nEnter country names:", MAIN_KEYBOARD)
                 user_data[cid]['waiting'] = "add_multiple"
             
             elif text == "📋 Selected Countries":
@@ -1053,7 +1168,7 @@ while True:
                     send_msg(cid, "❌ No single country set!\nUse '🌍 Set Single Country' first.", MAIN_KEYBOARD)
             
             elif text == "🌍 Set Single Country":
-                send_msg(cid, "🌍 <b>Set Single Country</b>\n\nType country name:\nExamples: Cuba, Oman, Thailand, Italy, Germany", MAIN_KEYBOARD)
+                send_msg(cid, "🌍 <b>Set Single Country</b>\n\nType country name:\nExamples: Bangladesh, India, USA, UK, Germany", MAIN_KEYBOARD)
                 user_data[cid]['waiting'] = "set_single"
             
             elif text == "📊 Report":
@@ -1105,7 +1220,7 @@ while True:
                     msg += f"\n📊 Total: {len(user_data[cid]['countries'])}"
                     send_msg(cid, msg, MAIN_KEYBOARD)
                 else:
-                    send_msg(cid, f"❌ No valid countries found.\n\nTry: Cuba, Oman, Thailand, Italy, Germany", MAIN_KEYBOARD)
+                    send_msg(cid, f"❌ No valid countries found.\n\nTry: Bangladesh, India, USA, UK, Germany", MAIN_KEYBOARD)
                 user_data[cid]['waiting'] = None
             
             elif user_data[cid].get('waiting') == "set_single":
@@ -1114,7 +1229,7 @@ while True:
                     user_data[cid]['single_country'] = country['name']
                     send_msg(cid, f"✅ Single country set to: {country['name']} {country['flag']}", MAIN_KEYBOARD)
                 else:
-                    send_msg(cid, f"❌ '{text}' not found.\nTry: Cuba, Oman, Thailand, Italy", MAIN_KEYBOARD)
+                    send_msg(cid, f"❌ '{text}' not found.\nTry: Bangladesh, India, USA", MAIN_KEYBOARD)
                 user_data[cid]['waiting'] = None
             
             elif user_data[cid].get('waiting') == "switch_project":
