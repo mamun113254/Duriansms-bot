@@ -11,11 +11,11 @@ BOT_TOKEN = "8666173297:AAEBcbVPdUdXmLt8ZvCyIWzmhfg-OU8eM0c"
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # ============= টেলিগ্রাম ব্যাকআপ গ্রুপ কনফিগারেশন =============
-BACKUP_GROUP_ID = -1003732536424  # আপনার গ্রুপের আইডি
-BACKUP_MESSAGE_IDS = {}  # বিভিন্ন ফাইলের মেসেজ আইডি স্টোর
+BACKUP_GROUP_ID = -1003713267585  # নতুন ব্যাকআপ গ্রুপ আইডি
+BACKUP_MESSAGE_IDS = {}
 
 # ============= অ্যাডমিন কনফিগারেশন =============
-ADMIN_IDS = [948283424]
+ADMIN_IDS = [948283424, -1003713267585]  # আপনার ইউজার আইডি + ব্যাকআপ গ্রুপ আইডি
 ADMIN_PASSWORD = "mamun1132"
 ADMIN_USERNAME = "rana1132"
 CHANNEL_LINK = "https://t.me/updaterange"
@@ -41,7 +41,6 @@ OTP_COST = 100
 def get_backup_message_id(filename):
     """ব্যাকআপ মেসেজের আইডি খোঁজা"""
     try:
-        # গ্রুপের আপডেট চেক
         r = requests.get(TG_API + "getUpdates", params={
             "chat_id": BACKUP_GROUP_ID, 
             "limit": 50
@@ -62,35 +61,26 @@ def get_backup_message_id(filename):
     return None
 
 def save_backup_to_group(filename, data):
-    """ডাটা টেলিগ্রাম গ্রুপে ব্যাকআপ করা"""
+    """ডাটা টেলিগ্রাম গ্রুপে ব্যাকআপ করা - অথরাইজেশন ছাড়াই"""
     try:
         text = f"📁 {filename}\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)}\n```"
         
-        # লম্বা টেক্সট হলে কাটা
         if len(text) > 4000:
             text = f"📁 {filename}\n```json\n{json.dumps(data, indent=2, ensure_ascii=False)[:3500]}\n...```"
         
-        msg_id = BACKUP_MESSAGE_IDS.get(filename)
+        # সরাসরি API কল (send_msg ফাংশন এড়িয়ে যান)
+        r = requests.post(TG_API + "sendMessage", json={
+            "chat_id": BACKUP_GROUP_ID,
+            "text": text,
+            "parse_mode": "Markdown"
+        }, timeout=10)
         
-        if msg_id:
-            # পুরনো মেসেজ এডিট করুন
-            requests.post(TG_API + "editMessageText", json={
-                "chat_id": BACKUP_GROUP_ID,
-                "message_id": msg_id,
-                "text": text,
-                "parse_mode": "Markdown"
-            }, timeout=10)
+        if r.status_code == 200:
+            print(f"✅ Backup sent to group: {filename}")
+            return True
         else:
-            # নতুন মেসেজ তৈরি করুন
-            r = requests.post(TG_API + "sendMessage", json={
-                "chat_id": BACKUP_GROUP_ID,
-                "text": text,
-                "parse_mode": "Markdown"
-            }, timeout=10)
-            if r.status_code == 200:
-                BACKUP_MESSAGE_IDS[filename] = r.json()["result"]["message_id"]
-        
-        return True
+            print(f"❌ Backup failed: {r.status_code} - {r.text}")
+            return False
     except Exception as e:
         print(f"Backup error for {filename}: {e}")
         return False
@@ -98,12 +88,6 @@ def save_backup_to_group(filename, data):
 def load_backup_from_group(filename):
     """টেলিগ্রাম গ্রুপ থেকে ব্যাকআপ লোড করা"""
     try:
-        msg_id = get_backup_message_id(filename)
-        if not msg_id:
-            return None
-        
-        # ফরওয়ার্ড করে মেসেজ পাওয়া যায় না, তাই getUpdates দিয়ে ইতিহাস পাওয়া যায় না
-        # এই কারণে ফাইল থেকে লোড করাই ভালো
         if os.path.exists(filename):
             with open(filename, 'r') as f:
                 return json.load(f)
@@ -126,7 +110,7 @@ def backup_all_data():
             save_backup_to_group(CONFIG_FILE, json.load(f))
 
 def restore_from_backup():
-    """গ্রুপ ব্যাকআপ থেকে ডাটা রিস্টোর করা (যদি ফাইল না থাকে)"""
+    """গ্রুপ ব্যাকআপ থেকে ডাটা রিস্টোর করা"""
     if not os.path.exists(ACCESS_FILE):
         data = load_backup_from_group(ACCESS_FILE)
         if data:
@@ -410,6 +394,22 @@ def get_inline_buttons(phone, country_name, flag):
 # ============= API ফাংশন =============
 
 def send_msg(chat_id, text, kb=None, reply_markup=None):
+    # ব্যাকআপ গ্রুপের জন্য অথরাইজেশন চেক বাইপাস
+    if chat_id == BACKUP_GROUP_ID:
+        data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+        if kb:
+            data["reply_markup"] = json.dumps(kb)
+        if reply_markup:
+            data["reply_markup"] = json.dumps(reply_markup)
+        try:
+            return requests.post(TG_API + "sendMessage", json=data, timeout=10).json()
+        except:
+            return None
+    
+    # সাধারণ ইউজারের জন্য অথরাইজেশন চেক
+    if not is_authorized(chat_id) and chat_id not in ADMIN_IDS:
+        return None
+    
     data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if kb:
         data["reply_markup"] = json.dumps(kb)
@@ -778,6 +778,10 @@ while True:
             text = msg.get("text", "")
             
             print(f"📨 {cid}: {text}")
+            
+            # ব্যাকআপ গ্রুপের জন্য অথরাইজেশন চেক বাইপাস
+            if cid == BACKUP_GROUP_ID:
+                continue
             
             if not is_authorized(cid) and cid not in ADMIN_IDS:
                 if text == "/start":
