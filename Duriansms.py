@@ -1,4 +1,4 @@
-# Duriansms.py - Complete Bot with Statistics, Backup, Points System & Admin Panel
+# Duriansms.py - Complete Bot with Auto Backup & Restore from Telegram Group
 
 import requests
 import time
@@ -13,7 +13,7 @@ TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # ============= টেলিগ্রাম ব্যাকআপ গ্রুপ কনফিগারেশন =============
 BACKUP_GROUP_ID = -1003713267585
-BACKUP_MESSAGE_IDS = {}
+BACKUP_FILE_IDS = {}
 
 # ============= অ্যাডমিন কনফিগারেশন =============
 ADMIN_IDS = [948283424, -1003713267585]
@@ -38,40 +38,31 @@ DEFAULT_CONFIG = {
 DEFAULT_POINTS = 0
 OTP_COST = 100
 
+# ============= স্ট্যাটিস্টিক্স ডিফল্ট =============
+DEFAULT_STATS = {
+    "total_users_started": 0,
+    "total_numbers_used": 0,
+    "total_otp_received": 0,
+    "total_points_used": 0,
+    "user_numbers": {},
+    "user_otp": {},
+    "user_started": [],
+    "daily_activity": {},
+    "country_usage": {}
+}
+
 # ============= স্ট্যাটিস্টিক্স ফাংশন =============
 
 def load_stats():
-    """স্ট্যাটিস্টিক্স লোড করা"""
     if os.path.exists(STATS_FILE):
         try:
             with open(STATS_FILE, 'r') as f:
                 return json.load(f)
         except:
-            return {
-                "total_users_started": 0,
-                "total_numbers_used": 0,
-                "total_otp_received": 0,
-                "total_points_used": 0,
-                "user_numbers": {},
-                "user_otp": {},
-                "user_started": [],
-                "daily_activity": {},
-                "country_usage": {}
-            }
-    return {
-        "total_users_started": 0,
-        "total_numbers_used": 0,
-        "total_otp_received": 0,
-        "total_points_used": 0,
-        "user_numbers": {},
-        "user_otp": {},
-        "user_started": [],
-        "daily_activity": {},
-        "country_usage": {}
-    }
+            return DEFAULT_STATS.copy()
+    return DEFAULT_STATS.copy()
 
 def save_stats(stats_data):
-    """স্ট্যাটিস্টিক্স সেভ করা"""
     try:
         with open(STATS_FILE, 'w') as f:
             json.dump(stats_data, f, indent=2)
@@ -80,10 +71,8 @@ def save_stats(stats_data):
         pass
 
 def update_stats_user_started(user_id):
-    """ইউজার স্টার্ট দিলে আপডেট"""
     stats = load_stats()
     user_id_str = str(user_id)
-    
     if user_id_str not in stats["user_started"]:
         stats["user_started"].append(user_id_str)
         stats["total_users_started"] = len(stats["user_started"])
@@ -91,73 +80,52 @@ def update_stats_user_started(user_id):
         print(f"📊 New user started: {user_id} (Total: {stats['total_users_started']})")
 
 def update_stats_number_used(user_id, country_name):
-    """নম্বর ইউজ করলে আপডেট"""
     stats = load_stats()
     user_id_str = str(user_id)
     today = datetime.now().strftime("%Y-%m-%d")
-    
-    # ইউজার নম্বর কাউন্ট
     stats["user_numbers"][user_id_str] = stats["user_numbers"].get(user_id_str, 0) + 1
     stats["total_numbers_used"] += 1
-    
-    # দেশের ইউজ কাউন্ট
     if country_name:
         stats["country_usage"][country_name] = stats["country_usage"].get(country_name, 0) + 1
-    
-    # দৈনিক অ্যাক্টিভিটি
     if today not in stats["daily_activity"]:
         stats["daily_activity"][today] = {"numbers": 0, "otp": 0}
     stats["daily_activity"][today]["numbers"] += 1
-    
     save_stats(stats)
 
 def update_stats_otp_received(user_id):
-    """OTP পেলে আপডেট"""
     stats = load_stats()
     user_id_str = str(user_id)
     today = datetime.now().strftime("%Y-%m-%d")
-    
-    # ইউজার OTP কাউন্ট
     stats["user_otp"][user_id_str] = stats["user_otp"].get(user_id_str, 0) + 1
     stats["total_otp_received"] += 1
     stats["total_points_used"] += OTP_COST
-    
-    # দৈনিক অ্যাক্টিভিটি
     if today not in stats["daily_activity"]:
         stats["daily_activity"][today] = {"numbers": 0, "otp": 0}
     stats["daily_activity"][today]["otp"] += 1
-    
     save_stats(stats)
 
-def get_statistics_text(is_admin=False):
-    """স্ট্যাটিস্টিক্স টেক্সট জেনারেট করা"""
+def get_statistics_text(chat_id=None, is_admin=False):
     stats = load_stats()
     auth_users = get_all_authorized_users()
     
     if is_admin:
-        # অ্যাডমিনের জন্য ডিটেইলড স্ট্যাটস
-        total_users = stats["total_users_started"]
+        total_users = stats.get("total_users_started", 0)
         authorized_count = len(auth_users)
-        pending = total_users - authorized_count
+        pending = total_users - authorized_count if total_users > authorized_count else 0
         
-        # টপ ইউজার লিস্ট
-        top_users = sorted(stats["user_otp"].items(), key=lambda x: x[1], reverse=True)[:5]
+        user_otp = stats.get("user_otp", {})
+        top_users = sorted(user_otp.items(), key=lambda x: x[1], reverse=True)[:5]
         top_users_text = ""
         for i, (uid, otp) in enumerate(top_users, 1):
-            numbers = stats["user_numbers"].get(uid, 0)
-            top_users_text += f"{i}. User {uid} - {otp} OTPs, {numbers} numbers\n"
+            user_numbers = stats.get("user_numbers", {}).get(uid, 0)
+            top_users_text += f"{i}. User {uid} - {otp} OTPs, {user_numbers} numbers\n"
         
-        # আজকের অ্যাক্টিভিটি
         today = datetime.now().strftime("%Y-%m-%d")
-        today_activity = stats["daily_activity"].get(today, {"numbers": 0, "otp": 0})
+        daily_activity = stats.get("daily_activity", {})
+        today_activity = daily_activity.get(today, {"numbers": 0, "otp": 0})
         
-        # গতকালের অ্যাক্টিভিটি
-        yesterday = (datetime.now().replace(hour=0, minute=0, second=0) - time.strptime)
-        # সিম্পল সংস্করণ
-        yesterday_activity = {"numbers": 0, "otp": 0}
-        
-        # দেশের ইউজ
-        top_countries = sorted(stats["country_usage"].items(), key=lambda x: x[1], reverse=True)[:5]
+        country_usage = stats.get("country_usage", {})
+        top_countries = sorted(country_usage.items(), key=lambda x: x[1], reverse=True)[:5]
         countries_text = ""
         for country, count in top_countries:
             countries_text += f"• {country}: {count} numbers\n"
@@ -169,33 +137,32 @@ def get_statistics_text(is_admin=False):
 │ • Total Users Started: {total_users}          │
 │ • Authorized Users: {authorized_count}        │
 │ • Pending Access: {pending}                   │
-│ • Total Numbers Used: {stats['total_numbers_used']}        │
-│ • Total OTP Received: {stats['total_otp_received']}        │
-│ • Total Points Used: {stats['total_points_used']}          │
+│ • Total Numbers Used: {stats.get('total_numbers_used', 0)}        │
+│ • Total OTP Received: {stats.get('total_otp_received', 0)}        │
+│ • Total Points Used: {stats.get('total_points_used', 0)}          │
 ╰─────────────────────────────────────╯
 
 ╭─────────────────────────────────────╮
 │ 🏆 <b>Top Users (by OTP)</b>          │
-{top_users_text if top_users_text else "• No data yet"}
+{top_users_text if top_users_text else '• No data yet'}
 ╰─────────────────────────────────────╯
 
 ╭─────────────────────────────────────╮
 │ 📅 <b>Today's Activity</b>            │
-│ • Numbers Used: {today_activity['numbers']}        │
-│ • OTP Received: {today_activity['otp']}            │
+│ • Numbers Used: {today_activity.get('numbers', 0)}        │
+│ • OTP Received: {today_activity.get('otp', 0)}            │
 ╰─────────────────────────────────────╯
 
 ╭─────────────────────────────────────╮
 │ 🌍 <b>Country Usage</b>               │
-{countries_text if countries_text else "• No data yet"}
+{countries_text if countries_text else '• No data yet'}
 ╰─────────────────────────────────────╯
 
 🆘 <b>Support:</b> @{ADMIN_USERNAME}"""
     else:
-        # সাধারণ ইউজারের জন্য সিম্পল স্ট্যাটস
-        user_id_str = str(chat_id) if 'chat_id' in dir() else "unknown"
-        user_numbers = stats["user_numbers"].get(user_id_str, 0)
-        user_otp = stats["user_otp"].get(user_id_str, 0)
+        user_id_str = str(chat_id) if chat_id else "unknown"
+        user_numbers = stats.get("user_numbers", {}).get(user_id_str, 0)
+        user_otp = stats.get("user_otp", {}).get(user_id_str, 0)
         
         text = f"""📊 <b>Your Statistics</b>
 
@@ -208,141 +175,147 @@ def get_statistics_text(is_admin=False):
 
 ╭─────────────────────────────────────╮
 │ 📈 <b>Global Stats</b>                │
-│ • Total Users: {stats['total_users_started']}         │
-│ • Total Numbers: {stats['total_numbers_used']}        │
-│ • Total OTPs: {stats['total_otp_received']}           │
+│ • Total Users: {stats.get('total_users_started', 0)}         │
+│ • Total Numbers: {stats.get('total_numbers_used', 0)}        │
+│ • Total OTPs: {stats.get('total_otp_received', 0)}           │
 ╰─────────────────────────────────────╯
 
 🆘 <b>Support:</b> @{ADMIN_USERNAME}"""
     
     return text
 
-# ============= টেলিগ্রাম গ্রুপ থেকে ব্যাকআপ রিস্টোর ফাংশন =============
+# ============= টেলিগ্রাম গ্রুপ ব্যাকআপ ফাংশন =============
 
-def get_all_group_messages():
-    messages = []
-    offset = 0
+def get_backup_message_ids():
+    global BACKUP_FILE_IDS
     try:
-        while True:
-            r = requests.get(TG_API + "getUpdates", params={
-                "chat_id": BACKUP_GROUP_ID,
-                "offset": offset,
-                "limit": 100
-            }, timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                if not data.get("ok") or not data.get("result"):
-                    break
+        r = requests.get(TG_API + "getUpdates", params={
+            "chat_id": BACKUP_GROUP_ID,
+            "limit": 100
+        }, timeout=15)
+        
+        if r.status_code == 200:
+            data = r.json()
+            if data.get("ok") and data.get("result"):
                 for update in data["result"]:
                     if "message" in update:
-                        messages.append(update["message"])
-                        offset = update["update_id"] + 1
-                if len(data["result"]) < 100:
-                    break
-            else:
-                break
+                        msg = update["message"]
+                        text = msg.get("text", "")
+                        msg_id = msg["message_id"]
+                        
+                        if "user_access.json" in text:
+                            BACKUP_FILE_IDS["user_access"] = msg_id
+                        elif "user_points.json" in text:
+                            BACKUP_FILE_IDS["user_points"] = msg_id
+                        elif "users_data.json" in text:
+                            BACKUP_FILE_IDS["users_data"] = msg_id
+                        elif "user_stats.json" in text:
+                            BACKUP_FILE_IDS["user_stats"] = msg_id
     except Exception as e:
-        print(f"Get messages error: {e}")
-    return messages
+        print(f"Get backup IDs error: {e}")
 
 def restore_from_telegram_backup():
     print("🔄 Checking for backups in Telegram group...")
-    messages = get_all_group_messages()
-    if not messages:
-        print("⚠️ No messages found in backup group")
-        return False
-    restored = False
-    for msg in messages:
-        text = msg.get("text", "")
-        if text.startswith("📁 user_access.json"):
+    
+    try:
+        get_backup_message_ids()
+        
+        restored = False
+        
+        for file_key, msg_id in BACKUP_FILE_IDS.items():
             try:
-                json_part = text.replace("📁 user_access.json", "").strip()
-                json_part = json_part.replace("```json", "").replace("```", "").strip()
-                data = json.loads(json_part)
+                r = requests.get(TG_API + "getUpdates", params={
+                    "chat_id": BACKUP_GROUP_ID,
+                    "limit": 100
+                }, timeout=10)
+                
+                if r.status_code == 200:
+                    data = r.json()
+                    if data.get("ok") and data.get("result"):
+                        for update in data["result"]:
+                            if "message" in update and update["message"]["message_id"] == msg_id:
+                                text = update["message"].get("text", "")
+                                json_part = text.split("\n", 1)[1] if "\n" in text else text
+                                json_part = json_part.replace("```json", "").replace("```", "").strip()
+                                data_content = json.loads(json_part)
+                                
+                                if file_key == "user_access":
+                                    with open(ACCESS_FILE, 'w') as f:
+                                        json.dump(data_content, f, indent=2)
+                                    print(f"✅ Restored {ACCESS_FILE} from backup")
+                                elif file_key == "user_points":
+                                    with open(POINTS_FILE, 'w') as f:
+                                        json.dump(data_content, f, indent=2)
+                                    print(f"✅ Restored {POINTS_FILE} from backup")
+                                elif file_key == "users_data":
+                                    with open(CONFIG_FILE, 'w') as f:
+                                        json.dump(data_content, f, indent=2)
+                                    print(f"✅ Restored {CONFIG_FILE} from backup")
+                                elif file_key == "user_stats":
+                                    with open(STATS_FILE, 'w') as f:
+                                        json.dump(data_content, f, indent=2)
+                                    print(f"✅ Restored {STATS_FILE} from backup")
+                                restored = True
+                                break
+            except Exception as e:
+                print(f"Restore error for {file_key}: {e}")
+        
+        if not restored:
+            print("⚠️ No backup files found, creating fresh files")
+            if not os.path.exists(ACCESS_FILE):
                 with open(ACCESS_FILE, 'w') as f:
-                    json.dump(data, f, indent=2)
-                print(f"✅ Restored {ACCESS_FILE} from backup")
-                restored = True
-            except Exception as e:
-                print(f"❌ Failed to restore {ACCESS_FILE}: {e}")
-        elif text.startswith("📁 user_points.json"):
-            try:
-                json_part = text.replace("📁 user_points.json", "").strip()
-                json_part = json_part.replace("```json", "").replace("```", "").strip()
-                data = json.loads(json_part)
+                    json.dump({"authorized_users": []}, f, indent=2)
+            if not os.path.exists(POINTS_FILE):
                 with open(POINTS_FILE, 'w') as f:
-                    json.dump(data, f, indent=2)
-                print(f"✅ Restored {POINTS_FILE} from backup")
-                restored = True
-            except Exception as e:
-                print(f"❌ Failed to restore {POINTS_FILE}: {e}")
-        elif text.startswith("📁 users_data.json"):
-            try:
-                json_part = text.replace("📁 users_data.json", "").strip()
-                json_part = json_part.replace("```json", "").replace("```", "").strip()
-                data = json.loads(json_part)
+                    json.dump({}, f, indent=2)
+            if not os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, 'w') as f:
-                    json.dump(data, f, indent=2)
-                print(f"✅ Restored {CONFIG_FILE} from backup")
-                restored = True
-            except Exception as e:
-                print(f"❌ Failed to restore {CONFIG_FILE}: {e}")
-        elif text.startswith("📁 user_stats.json"):
-            try:
-                json_part = text.replace("📁 user_stats.json", "").strip()
-                json_part = json_part.replace("```json", "").replace("```", "").strip()
-                data = json.loads(json_part)
+                    json.dump({}, f, indent=2)
+            if not os.path.exists(STATS_FILE):
                 with open(STATS_FILE, 'w') as f:
-                    json.dump(data, f, indent=2)
-                print(f"✅ Restored {STATS_FILE} from backup")
-                restored = True
-            except Exception as e:
-                print(f"❌ Failed to restore {STATS_FILE}: {e}")
-    if not restored:
-        print("⚠️ No backup files found in group, creating fresh files")
-        if not os.path.exists(ACCESS_FILE):
-            with open(ACCESS_FILE, 'w') as f:
-                json.dump({"authorized_users": []}, f, indent=2)
-        if not os.path.exists(POINTS_FILE):
-            with open(POINTS_FILE, 'w') as f:
-                json.dump({}, f, indent=2)
-        if not os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump({}, f, indent=2)
-        if not os.path.exists(STATS_FILE):
-            with open(STATS_FILE, 'w') as f:
-                json.dump({
-                    "total_users_started": 0,
-                    "total_numbers_used": 0,
-                    "total_otp_received": 0,
-                    "total_points_used": 0,
-                    "user_numbers": {},
-                    "user_otp": {},
-                    "user_started": [],
-                    "daily_activity": {},
-                    "country_usage": {}
-                }, f, indent=2)
-    else:
-        print("✅ Backup restore completed!")
-    return restored
+                    json.dump(DEFAULT_STATS, f, indent=2)
+        else:
+            print("✅ Backup restore completed!")
+            
+    except Exception as e:
+        print(f"Restore error: {e}")
 
 def save_backup_to_group(filename, data):
     try:
+        get_backup_message_ids()
+        
         text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)}"
         if len(text) > 4096:
             text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)[:3500]}\n... (truncated)"
+        
+        file_key = filename.replace(".json", "")
+        
+        if file_key in BACKUP_FILE_IDS and BACKUP_FILE_IDS[file_key]:
+            try:
+                r = requests.post(TG_API + "editMessageText", json={
+                    "chat_id": BACKUP_GROUP_ID,
+                    "message_id": BACKUP_FILE_IDS[file_key],
+                    "text": text
+                }, timeout=10)
+                if r.status_code == 200:
+                    print(f"✅ Updated backup: {filename}")
+                    return True
+            except:
+                pass
+        
         r = requests.post(TG_API + "sendMessage", json={
             "chat_id": BACKUP_GROUP_ID,
             "text": text
         }, timeout=10)
+        
         if r.status_code == 200:
-            print(f"✅ Backup sent to group: {filename}")
+            print(f"✅ New backup sent: {filename}")
             return True
         else:
-            print(f"❌ Backup failed: {r.status_code} - {r.text[:200]}")
+            print(f"❌ Backup failed: {r.status_code}")
             return False
     except Exception as e:
-        print(f"Backup error for {filename}: {e}")
+        print(f"Backup error: {e}")
         return False
 
 def backup_all_data():
@@ -813,7 +786,6 @@ def country_watch_worker(chat_id, country_name, retry_msg_id):
             if chat_id not in sent_numbers:
                 sent_numbers[chat_id] = {}
             
-            # স্ট্যাটিস্টিক্স আপডেট
             update_stats_number_used(chat_id, country['name'])
             
             msg_text = f"""<b>✅ New Number!</b>
@@ -1235,7 +1207,7 @@ while True:
                     send_msg(cid, f"💰 <b>Your Balance</b>\n\n💎 Points: <code>{points}</code>\n💸 Cost per OTP: <code>{OTP_COST}</code> points\n\nYou can get {points // OTP_COST} more OTPs.", MAIN_KEYBOARD)
             
             elif text == "📊 Statistics":
-                stats_text = get_statistics_text(is_admin(cid))
+                stats_text = get_statistics_text(cid, is_admin(cid))
                 send_msg(cid, stats_text, MAIN_KEYBOARD)
             
             elif text == "➕ Add Country to Bot" and is_admin(cid):
