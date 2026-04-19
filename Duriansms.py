@@ -1,4 +1,4 @@
-# Duriansms.py - Complete Bot with Auto Backup & Restore from Telegram Group
+# Duriansms.py - Complete Bot with Multiple OTP Check & No Popup Alerts
 
 import requests
 import time
@@ -803,7 +803,8 @@ def country_watch_worker(chat_id, country_name, retry_msg_id):
                     "country": country['name'],
                     "flag": country['flag'],
                     "pid": pid,
-                    "msg_id": msg_id
+                    "msg_id": msg_id,
+                    "otp_list": []  # OTP ইতিহাস রাখার জন্য
                 }
             
             attempt = 0
@@ -873,7 +874,7 @@ def start_auto_backup():
 # ============= মেইন লুপ =============
 
 print("=" * 60)
-print("🤖 Durian SMS Bot - Complete Edition with Statistics")
+print("🤖 Durian SMS Bot - Complete Edition with Multiple OTP Check")
 print("=" * 60)
 print(f"👤 Admin ID: {ADMIN_IDS}")
 print(f"🔑 Admin Password: {ADMIN_PASSWORD}")
@@ -887,8 +888,8 @@ current_users = get_all_authorized_users()
 print(f"📋 Current authorized users: {current_users}")
 start_auto_backup()
 
-print("✅ Bot is running with Telegram backup & auto restore!")
-print("📊 Statistics tracking enabled!")
+print("✅ Bot is running with multiple OTP check feature!")
+print("📌 Get OTP button can be used multiple times for the same number")
 print("=" * 60)
 
 last = 0
@@ -910,83 +911,70 @@ while True:
                 
                 if data.startswith("get_otp_"):
                     phone = data.replace("get_otp_", "")
-                    answer_callback(cb_id, "🔍 Checking for OTP...")
+                    answer_callback(cb_id, "🔍 Checking for OTP...", alert=False)
                     
-                    if not is_admin(cid):
-                        if has_user_config(cid):
-                            config = get_user_config(cid)
-                            pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
-                            country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
-                            flag = sent_numbers.get(cid, {}).get(phone, {}).get("flag", "")
-                            otp = None
-                            for i in range(12):
-                                time.sleep(3)
-                                result = get_sms(phone, pid, config)
-                                if result:
-                                    otp = result
-                                    update_stats_otp_received(cid)
-                                    new_text = f"""<b>✅ SMS Received!</b>
-<b>Number</b>: <code>{phone}</code>
-<b>Country</b>: {country} {flag}
-<b>Code</b>: <code>{otp}</code> ✅
-<b>Points Used</b>: {OTP_COST}
-<b>Note</b>: Points deducted from your API panel"""
-                                    edit_message(cid, msg_id, new_text)
-                                    break
-                                edit_message(cid, msg_id, f"⏳ Checking OTP... ({i+1}/12)\n📱 {phone}")
-                            if not otp:
-                                delete_message(cid, msg_id)
-                                send_msg(cid, f"❌ No OTP found after 12 attempts.\nNo points deducted.", MAIN_KEYBOARD)
-                        else:
-                            if not has_sufficient_points(cid):
-                                delete_message(cid, msg_id)
-                                send_msg(cid, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(cid)} points\nNeed: {OTP_COST} points\n\nContact admin to add points.", MAIN_KEYBOARD)
-                                continue
-                            config = get_user_config(cid)
-                            pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
-                            country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
-                            flag = sent_numbers.get(cid, {}).get(phone, {}).get("flag", "")
-                            otp = None
-                            for i in range(12):
-                                time.sleep(3)
-                                otp = get_sms(phone, pid, config)
-                                if otp:
-                                    deduct_user_points(cid, OTP_COST)
-                                    update_stats_otp_received(cid)
-                                    new_text = f"""<b>✅ SMS Received!</b>
-<b>Number</b>: <code>{phone}</code>
-<b>Country</b>: {country} {flag}
-<b>Code</b>: <code>{otp}</code> ✅
-<b>Points Used</b>: {OTP_COST}
-<b>Remaining Balance</b>: {get_user_points(cid)}"""
-                                    edit_message(cid, msg_id, new_text)
-                                    break
-                                edit_message(cid, msg_id, f"⏳ Checking OTP... ({i+1}/12)\n📱 {phone}")
-                            if not otp:
-                                delete_message(cid, msg_id)
-                                send_msg(cid, f"❌ No OTP found after 12 attempts.\nNo points deducted.", MAIN_KEYBOARD)
-                    else:
-                        config = get_user_config(cid)
-                        pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
-                        country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
-                        flag = sent_numbers.get(cid, {}).get(phone, {}).get("flag", "")
-                        otp = None
-                        for i in range(12):
-                            time.sleep(3)
-                            result = get_sms(phone, pid, config)
-                            if result:
-                                otp = result
-                                update_stats_otp_received(cid)
+                    config = get_user_config(cid)
+                    pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
+                    country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
+                    flag = sent_numbers.get(cid, {}).get(phone, {}).get("flag", "")
+                    
+                    # OTP চেক করুন
+                    otp = None
+                    for i in range(12):
+                        time.sleep(3)
+                        otp = get_sms(phone, pid, config)
+                        if otp:
+                            break
+                        edit_message(cid, msg_id, f"🔍 Checking for OTP... ({i+1}/12)\n📱 {phone}")
+                    
+                    if otp:
+                        update_stats_otp_received(cid)
+                        
+                        # OTP ইতিহাসে যোগ করুন
+                        if "otp_list" not in sent_numbers[cid].get(phone, {}):
+                            sent_numbers[cid][phone]["otp_list"] = []
+                        sent_numbers[cid][phone]["otp_list"].append(otp)
+                        otp_count = len(sent_numbers[cid][phone]["otp_list"])
+                        
+                        # OTP ইতিহাস দেখানোর জন্য টেক্সট তৈরি করুন
+                        otp_history = ""
+                        for idx, old_otp in enumerate(sent_numbers[cid][phone]["otp_list"], 1):
+                            otp_history += f"<b>OTP #{idx}</b>: <code>{old_otp}</code>\n"
+                        
+                        if not is_admin(cid):
+                            if has_user_config(cid):
                                 new_text = f"""<b>✅ SMS Received!</b>
 <b>Number</b>: <code>{phone}</code>
 <b>Country</b>: {country} {flag}
-<b>Code</b>: <code>{otp}</code> ✅"""
-                                edit_message(cid, msg_id, new_text)
-                                break
-                            edit_message(cid, msg_id, f"⏳ Checking OTP... ({i+1}/12)\n📱 {phone}")
-                        if not otp:
-                            delete_message(cid, msg_id)
-                            send_msg(cid, f"❌ No OTP found after 12 attempts.", MAIN_KEYBOARD)
+{otp_history}
+<b>Points Used</b>: {OTP_COST * otp_count}
+<b>Note</b>: Points deducted from your API panel"""
+                                edit_message(cid, msg_id, new_text, reply_markup=get_inline_buttons(phone, country, flag))
+                            else:
+                                if has_sufficient_points(cid):
+                                    deduct_user_points(cid, OTP_COST)
+                                    new_text = f"""<b>✅ SMS Received!</b>
+<b>Number</b>: <code>{phone}</code>
+<b>Country</b>: {country} {flag}
+{otp_history}
+<b>Points Used</b>: {OTP_COST * otp_count}
+<b>Remaining Balance</b>: {get_user_points(cid)}"""
+                                    edit_message(cid, msg_id, new_text, reply_markup=get_inline_buttons(phone, country, flag))
+                                else:
+                                    new_text = f"""<b>✅ SMS Received!</b>
+<b>Number</b>: <code>{phone}</code>
+<b>Country</b>: {country} {flag}
+{otp_history}
+<b>Points Used</b>: 0 (Insufficient balance)"""
+                                    edit_message(cid, msg_id, new_text, reply_markup=get_inline_buttons(phone, country, flag))
+                        else:
+                            new_text = f"""<b>✅ SMS Received!</b>
+<b>Number</b>: <code>{phone}</code>
+<b>Country</b>: {country} {flag}
+{otp_history}"""
+                            edit_message(cid, msg_id, new_text, reply_markup=get_inline_buttons(phone, country, flag))
+                    else:
+                        edit_message(cid, msg_id, f"❌ No OTP found after 12 attempts.\n📱 <code>{phone}</code>\n\nTry sending SMS again and click Get OTP.", reply_markup=get_inline_buttons(phone, country, flag))
                 
                 elif data.startswith("block_"):
                     phone = data.replace("block_", "")
@@ -994,7 +982,7 @@ while True:
                     pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
                     add_to_blacklist(phone, pid, config)
                     release(phone, pid, config)
-                    answer_callback(cb_id, f"✅ {phone} blocked", alert=True)
+                    answer_callback(cb_id, f"✅ {phone} blocked", alert=False)
                     delete_message(cid, msg_id)
                     if cid in sent_numbers and phone in sent_numbers[cid]:
                         del sent_numbers[cid][phone]
@@ -1004,7 +992,7 @@ while True:
                     config = get_user_config(cid)
                     pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
                     release(phone, pid, config)
-                    answer_callback(cb_id, f"✅ {phone} released", alert=True)
+                    answer_callback(cb_id, f"✅ {phone} released", alert=False)
                     delete_message(cid, msg_id)
                     if cid in sent_numbers and phone in sent_numbers[cid]:
                         del sent_numbers[cid][phone]
@@ -1369,7 +1357,10 @@ while True:
                         if has_user_config(cid):
                             send_msg(cid, f"🚀 <b>Watch Started!</b>\n\n<b>Countries:</b> {clist}\n<b>Mode:</b> Continuous (Never stops)\n<b>Status:</b> Running ✅\n<b>Note:</b> Points will be deducted from your API panel\n\nAll countries searching simultaneously!\nPress '🛑 Stop Watch' to stop.", MAIN_KEYBOARD)
                         else:
-                            send_msg(cid, f"🚀 <b>Watch Started!</b>\n\n<b>Countries:</b> {clist}\n<b>Mode:</b> Continuous (Never stops)\n<b>Status:</b> Running ✅\n<b>Your Balance:</b> {get_user_points(cid)} points\n\nAll countries searching simultaneously!\nPress '🛑 Stop Watch' to stop.", MAIN_KEYBOARD)
+                            if is_admin(cid):
+                                send_msg(cid, f"🚀 <b>Watch Started!</b>\n\n<b>Countries:</b> {clist}\n<b>Mode:</b> Continuous (Never stops)\n<b>Status:</b> Running ✅\n(Admin: No points deducted)\n\nAll countries searching simultaneously!\nPress '🛑 Stop Watch' to stop.", MAIN_KEYBOARD)
+                            else:
+                                send_msg(cid, f"🚀 <b>Watch Started!</b>\n\n<b>Countries:</b> {clist}\n<b>Mode:</b> Continuous (Never stops)\n<b>Status:</b> Running ✅\n<b>Your Balance:</b> {get_user_points(cid)} points\n\nAll countries searching simultaneously!\nPress '🛑 Stop Watch' to stop.", MAIN_KEYBOARD)
                     else:
                         send_msg(cid, "⚠️ Auto watch already running!", MAIN_KEYBOARD)
             
@@ -1410,7 +1401,13 @@ while True:
 <b>Attempts</b>: {attempt}"""
                                 result = send_msg(cid, msg_text, reply_markup=get_inline_buttons(phone, country['name'], country['flag']))
                                 if result and 'result' in result:
-                                    sent_numbers[cid][phone] = {"country": country['name'], "flag": country['flag'], "pid": pid, "msg_id": result['result']['message_id']}
+                                    sent_numbers[cid][phone] = {
+                                        "country": country['name'],
+                                        "flag": country['flag'],
+                                        "pid": pid,
+                                        "msg_id": result['result']['message_id'],
+                                        "otp_list": []
+                                    }
                                 break
                             time.sleep(3)
                     else:
