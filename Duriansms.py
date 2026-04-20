@@ -1,4 +1,4 @@
-# Duriansms.py - Complete Bot with Multiple OTP Check & No Popup Alerts
+# Duriansms.py - Complete Bot with One Number Per Country & Multiple OTP Check
 
 import requests
 import time
@@ -51,8 +51,14 @@ DEFAULT_STATS = {
     "country_usage": {}
 }
 
-# ============= স্ট্যাটিস্টিক্স ফাংশন =============
+# ============= গ্লোবাল ভেরিয়েবল =============
+user_data = {}
+running_watches = {}
+sent_numbers = {}
+country_threads = {}
+admin_session = {}
 
+# ============= স্ট্যাটিস্টিক্স ফাংশন =============
 def load_stats():
     if os.path.exists(STATS_FILE):
         try:
@@ -107,29 +113,24 @@ def update_stats_otp_received(user_id):
 def get_statistics_text(chat_id=None, is_admin=False):
     stats = load_stats()
     auth_users = get_all_authorized_users()
-    
     if is_admin:
         total_users = stats.get("total_users_started", 0)
         authorized_count = len(auth_users)
         pending = total_users - authorized_count if total_users > authorized_count else 0
-        
         user_otp = stats.get("user_otp", {})
         top_users = sorted(user_otp.items(), key=lambda x: x[1], reverse=True)[:5]
         top_users_text = ""
         for i, (uid, otp) in enumerate(top_users, 1):
             user_numbers = stats.get("user_numbers", {}).get(uid, 0)
             top_users_text += f"{i}. User {uid} - {otp} OTPs, {user_numbers} numbers\n"
-        
         today = datetime.now().strftime("%Y-%m-%d")
         daily_activity = stats.get("daily_activity", {})
         today_activity = daily_activity.get(today, {"numbers": 0, "otp": 0})
-        
         country_usage = stats.get("country_usage", {})
         top_countries = sorted(country_usage.items(), key=lambda x: x[1], reverse=True)[:5]
         countries_text = ""
         for country, count in top_countries:
             countries_text += f"• {country}: {count} numbers\n"
-        
         text = f"""📊 <b>Bot Statistics (Admin View)</b>
 
 ╭─────────────────────────────────────╮
@@ -163,7 +164,6 @@ def get_statistics_text(chat_id=None, is_admin=False):
         user_id_str = str(chat_id) if chat_id else "unknown"
         user_numbers = stats.get("user_numbers", {}).get(user_id_str, 0)
         user_otp = stats.get("user_otp", {}).get(user_id_str, 0)
-        
         text = f"""📊 <b>Your Statistics</b>
 
 ╭─────────────────────────────────────╮
@@ -181,19 +181,13 @@ def get_statistics_text(chat_id=None, is_admin=False):
 ╰─────────────────────────────────────╯
 
 🆘 <b>Support:</b> @{ADMIN_USERNAME}"""
-    
     return text
 
 # ============= টেলিগ্রাম গ্রুপ ব্যাকআপ ফাংশন =============
-
 def get_backup_message_ids():
     global BACKUP_FILE_IDS
     try:
-        r = requests.get(TG_API + "getUpdates", params={
-            "chat_id": BACKUP_GROUP_ID,
-            "limit": 100
-        }, timeout=15)
-        
+        r = requests.get(TG_API + "getUpdates", params={"chat_id": BACKUP_GROUP_ID, "limit": 100}, timeout=15)
         if r.status_code == 200:
             data = r.json()
             if data.get("ok") and data.get("result"):
@@ -202,7 +196,6 @@ def get_backup_message_ids():
                         msg = update["message"]
                         text = msg.get("text", "")
                         msg_id = msg["message_id"]
-                        
                         if "user_access.json" in text:
                             BACKUP_FILE_IDS["user_access"] = msg_id
                         elif "user_points.json" in text:
@@ -216,19 +209,12 @@ def get_backup_message_ids():
 
 def restore_from_telegram_backup():
     print("🔄 Checking for backups in Telegram group...")
-    
     try:
         get_backup_message_ids()
-        
         restored = False
-        
         for file_key, msg_id in BACKUP_FILE_IDS.items():
             try:
-                r = requests.get(TG_API + "getUpdates", params={
-                    "chat_id": BACKUP_GROUP_ID,
-                    "limit": 100
-                }, timeout=10)
-                
+                r = requests.get(TG_API + "getUpdates", params={"chat_id": BACKUP_GROUP_ID, "limit": 100}, timeout=10)
                 if r.status_code == 200:
                     data = r.json()
                     if data.get("ok") and data.get("result"):
@@ -238,7 +224,6 @@ def restore_from_telegram_backup():
                                 json_part = text.split("\n", 1)[1] if "\n" in text else text
                                 json_part = json_part.replace("```json", "").replace("```", "").strip()
                                 data_content = json.loads(json_part)
-                                
                                 if file_key == "user_access":
                                     with open(ACCESS_FILE, 'w') as f:
                                         json.dump(data_content, f, indent=2)
@@ -259,7 +244,6 @@ def restore_from_telegram_backup():
                                 break
             except Exception as e:
                 print(f"Restore error for {file_key}: {e}")
-        
         if not restored:
             print("⚠️ No backup files found, creating fresh files")
             if not os.path.exists(ACCESS_FILE):
@@ -276,38 +260,25 @@ def restore_from_telegram_backup():
                     json.dump(DEFAULT_STATS, f, indent=2)
         else:
             print("✅ Backup restore completed!")
-            
     except Exception as e:
         print(f"Restore error: {e}")
 
 def save_backup_to_group(filename, data):
     try:
         get_backup_message_ids()
-        
         text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)}"
         if len(text) > 4096:
             text = f"📁 {filename}\n{json.dumps(data, indent=2, ensure_ascii=False)[:3500]}\n... (truncated)"
-        
         file_key = filename.replace(".json", "")
-        
         if file_key in BACKUP_FILE_IDS and BACKUP_FILE_IDS[file_key]:
             try:
-                r = requests.post(TG_API + "editMessageText", json={
-                    "chat_id": BACKUP_GROUP_ID,
-                    "message_id": BACKUP_FILE_IDS[file_key],
-                    "text": text
-                }, timeout=10)
+                r = requests.post(TG_API + "editMessageText", json={"chat_id": BACKUP_GROUP_ID, "message_id": BACKUP_FILE_IDS[file_key], "text": text}, timeout=10)
                 if r.status_code == 200:
                     print(f"✅ Updated backup: {filename}")
                     return True
             except:
                 pass
-        
-        r = requests.post(TG_API + "sendMessage", json={
-            "chat_id": BACKUP_GROUP_ID,
-            "text": text
-        }, timeout=10)
-        
+        r = requests.post(TG_API + "sendMessage", json={"chat_id": BACKUP_GROUP_ID, "text": text}, timeout=10)
         if r.status_code == 200:
             print(f"✅ New backup sent: {filename}")
             return True
@@ -333,7 +304,6 @@ def backup_all_data():
             save_backup_to_group(STATS_FILE, json.load(f))
 
 # ============= ইউজার এক্সেস ম্যানেজমেন্ট =============
-
 def load_access():
     if os.path.exists(ACCESS_FILE):
         try:
@@ -388,7 +358,6 @@ def get_all_authorized_users():
     return access_data.get("authorized_users", [])
 
 # ============= পয়েন্ট ম্যানেজমেন্ট =============
-
 def load_points():
     if os.path.exists(POINTS_FILE):
         try:
@@ -430,7 +399,6 @@ def has_sufficient_points(chat_id):
     return get_user_points(chat_id) >= OTP_COST
 
 # ============= ইউজার কনফিগারেশন =============
-
 def load_user_configs():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -480,7 +448,6 @@ def has_user_config(chat_id):
     return str(chat_id) in configs
 
 # ============= API থেকে রিয়েল ব্যালেন্স আনার ফাংশন =============
-
 def get_real_api_balance(username, api_key, base_url):
     try:
         url = f"{base_url}/getUserInfo"
@@ -528,15 +495,7 @@ COUNTRIES = {
     "algeria": {"code": "+213", "name": "Algeria", "cuy": "dz", "flag": "🇩🇿"},
 }
 
-# ============= গ্লোবাল ভেরিয়েবল =============
-user_data = {}
-running_watches = {}
-sent_numbers = {}
-country_threads = {}
-admin_session = {}
-
 # ============= কিবোর্ড =============
-
 MAIN_KEYBOARD = {
     "keyboard": [
         ["🚀 Start Watch", "🛑 Stop Watch"],
@@ -603,7 +562,6 @@ def get_inline_buttons(phone, country_name, flag):
     }
 
 # ============= সেন্ড মেসেজ ফাংশন =============
-
 def send_msg(chat_id, text, kb=None, reply_markup=None):
     if chat_id == BACKUP_GROUP_ID:
         data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
@@ -615,7 +573,6 @@ def send_msg(chat_id, text, kb=None, reply_markup=None):
             return requests.post(TG_API + "sendMessage", json=data, timeout=10).json()
         except:
             return None
-    
     if "Welcome to Durian World Bot" in text or "Join Now My Channel" in text:
         data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
         if kb:
@@ -626,10 +583,8 @@ def send_msg(chat_id, text, kb=None, reply_markup=None):
             return requests.post(TG_API + "sendMessage", json=data, timeout=10).json()
         except:
             return None
-    
     if not is_authorized(chat_id) and chat_id not in ADMIN_IDS:
         return None
-    
     data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if kb:
         data["reply_markup"] = json.dumps(kb)
@@ -764,12 +719,10 @@ def add_to_blacklist(phone, pid, config):
         return False
 
 # ============= পার দেশ ওয়াচ থ্রেড =============
-
 def country_watch_worker(chat_id, country_name, retry_msg_id):
     country = COUNTRIES.get(country_name.lower())
     if not country:
         return
-    
     config = get_user_config(chat_id)
     pid = user_data.get(chat_id, {}).get("current_pid", "0257")
     attempt = 0
@@ -782,19 +735,16 @@ def country_watch_worker(chat_id, country_name, retry_msg_id):
         
         if res.get('ok'):
             phone = res['num']
-            
             if chat_id not in sent_numbers:
                 sent_numbers[chat_id] = {}
-            
             update_stats_number_used(chat_id, country['name'])
-            
             msg_text = f"""<b>✅ New Number!</b>
 <b>Number</b>    : <code>{phone}</code>
 <b>Country</b>   : {country['name']} {country['flag']}
 <b>Project</b>   : {'Telegram Default' if pid == '0257' else 'Telegram Extended'} ({pid})
 <b>Attempts</b>  : {attempt}
-<b>Status</b>    : Fresh ✅
-<b>Code</b>      : Waiting ❌"""
+<b>Status</b>    : Active ✅
+<b>OTP History</b>: Waiting..."""
             
             result = send_msg(chat_id, msg_text, reply_markup=get_inline_buttons(phone, country['name'], country['flag']))
             if result and 'result' in result:
@@ -804,14 +754,12 @@ def country_watch_worker(chat_id, country_name, retry_msg_id):
                     "flag": country['flag'],
                     "pid": pid,
                     "msg_id": msg_id,
-                    "otp_list": []  # OTP ইতিহাস রাখার জন্য
+                    "otp_list": []
                 }
-            
             attempt = 0
-            time.sleep(5)
             continue
-        
-        time.sleep(3)
+        else:
+            continue
     
     edit_message(chat_id, retry_msg_id, f"🛑 Stopped searching for {country['name']} {country['flag']}")
     if chat_id in country_threads and country_name in country_threads[chat_id]:
@@ -820,21 +768,17 @@ def country_watch_worker(chat_id, country_name, retry_msg_id):
 def start_auto_watch(chat_id):
     if running_watches.get(chat_id, {}).get("active"):
         return False
-    
     if not is_admin(chat_id):
         if not has_user_config(chat_id):
             if not has_sufficient_points(chat_id):
                 send_msg(chat_id, f"❌ <b>Insufficient Balance!</b>\n\nYour balance: {get_user_points(chat_id)} points\nNeed: {OTP_COST} points per OTP\n\nContact admin to add points.", MAIN_KEYBOARD)
                 return False
-    
     countries = user_data.get(chat_id, {}).get("countries", [])
     if not countries:
         send_msg(chat_id, "❌ No countries selected!\nPress '➕ Add Countries' first.", MAIN_KEYBOARD)
         return False
-    
     running_watches[chat_id] = {"active": True}
     country_threads[chat_id] = {}
-    
     for country_name in countries:
         country = COUNTRIES.get(country_name.lower())
         if country:
@@ -844,7 +788,6 @@ def start_auto_watch(chat_id):
                 thread = threading.Thread(target=country_watch_worker, args=(chat_id, country_name, retry_msg_id), daemon=True)
                 thread.start()
                 country_threads[chat_id][country_name] = {"thread": thread, "msg_id": retry_msg_id}
-    
     return True
 
 def stop_auto_watch(chat_id):
@@ -857,7 +800,6 @@ def is_admin(chat_id):
     return chat_id in ADMIN_IDS
 
 # ============= ব্যাকআপ থ্রেড =============
-
 def auto_backup_worker():
     while True:
         time.sleep(300)
@@ -872,7 +814,6 @@ def start_auto_backup():
     backup_thread.start()
 
 # ============= মেইন লুপ =============
-
 print("=" * 60)
 print("🤖 Durian SMS Bot - Complete Edition with Multiple OTP Check")
 print("=" * 60)
@@ -912,13 +853,10 @@ while True:
                 if data.startswith("get_otp_"):
                     phone = data.replace("get_otp_", "")
                     answer_callback(cb_id, "🔍 Checking for OTP...", alert=False)
-                    
                     config = get_user_config(cid)
                     pid = sent_numbers.get(cid, {}).get(phone, {}).get("pid", "0257")
                     country = sent_numbers.get(cid, {}).get(phone, {}).get("country", "Unknown")
                     flag = sent_numbers.get(cid, {}).get(phone, {}).get("flag", "")
-                    
-                    # OTP চেক করুন
                     otp = None
                     for i in range(12):
                         time.sleep(3)
@@ -926,28 +864,22 @@ while True:
                         if otp:
                             break
                         edit_message(cid, msg_id, f"🔍 Checking for OTP... ({i+1}/12)\n📱 {phone}")
-                    
                     if otp:
                         update_stats_otp_received(cid)
-                        
-                        # OTP ইতিহাসে যোগ করুন
                         if "otp_list" not in sent_numbers[cid].get(phone, {}):
                             sent_numbers[cid][phone]["otp_list"] = []
                         sent_numbers[cid][phone]["otp_list"].append(otp)
                         otp_count = len(sent_numbers[cid][phone]["otp_list"])
-                        
-                        # OTP ইতিহাস দেখানোর জন্য টেক্সট তৈরি করুন
                         otp_history = ""
                         for idx, old_otp in enumerate(sent_numbers[cid][phone]["otp_list"], 1):
                             otp_history += f"<b>OTP #{idx}</b>: <code>{old_otp}</code>\n"
-                        
                         if not is_admin(cid):
                             if has_user_config(cid):
                                 new_text = f"""<b>✅ SMS Received!</b>
 <b>Number</b>: <code>{phone}</code>
 <b>Country</b>: {country} {flag}
 {otp_history}
-<b>Points Used</b>: {OTP_COST * otp_count}
+<b>Total Points Used</b>: {OTP_COST * otp_count}
 <b>Note</b>: Points deducted from your API panel"""
                                 edit_message(cid, msg_id, new_text, reply_markup=get_inline_buttons(phone, country, flag))
                             else:
@@ -957,7 +889,7 @@ while True:
 <b>Number</b>: <code>{phone}</code>
 <b>Country</b>: {country} {flag}
 {otp_history}
-<b>Points Used</b>: {OTP_COST * otp_count}
+<b>Points Used This Time</b>: {OTP_COST}
 <b>Remaining Balance</b>: {get_user_points(cid)}"""
                                     edit_message(cid, msg_id, new_text, reply_markup=get_inline_buttons(phone, country, flag))
                                 else:
@@ -1031,7 +963,6 @@ while True:
                 country_threads[cid] = {}
             
             # ============ অ্যাডমিন সেশন চেক ============
-            
             if cid in admin_session and admin_session[cid].get("waiting"):
                 waiting_for = admin_session[cid]["waiting"]
                 
@@ -1151,7 +1082,6 @@ while True:
                     continue
             
             # ============ কমান্ড ============
-            
             if text == "/start":
                 update_stats_user_started(cid)
                 if is_admin(cid):
@@ -1317,7 +1247,6 @@ while True:
                 send_msg(cid, "🔙 Back to main menu:", MAIN_KEYBOARD)
             
             # ============ ইউজার কমান্ড ============
-            
             elif text == "➕ Add Countries":
                 if not is_admin(cid):
                     if not has_user_config(cid):
